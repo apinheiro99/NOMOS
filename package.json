@@ -17,7 +17,12 @@
     "start": "node dist/index.js",
     "dev": "tsx src/index.ts",
     "auth:keygen": "node scripts/auth-keygen.ts",
-    "gitgate": "node ../gitgate/bin/gitgate.ts"
+    "gitgate": "node ../gitgate/bin/gitgate.ts",
+    "typecheck": "tsc --noEmit",
+    "test": "node --test --test-timeout=120000 \"test/*.test.ts\"",
+    "check:public-surface": "node scripts/public-surface.ts",
+    "check:package": "tsc && node scripts/check-package-contents.ts",
+    "check:release": "node --test \"test/release/*.test.ts\""
   },
   "keywords": [
     "mcp",

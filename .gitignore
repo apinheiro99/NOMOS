@@ -7,3 +7,6 @@ knowledge-base/
 
 # Durable workflow continuations (runtime state shared by the MCP processes).
 continuations.jsonl
+ci-summary/
+/release/
+.pnpm-store/
