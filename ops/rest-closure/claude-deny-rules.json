@@ -7,7 +7,7 @@
       "Read(//proc/**)",
       "Bash(*.config/taiga-mcp*)",
       "Bash(*taiga-mcp/env*)",
-      "Bash(*192.168.1.95:9000*)",
+      "Bash(*taiga.example:9000*)",
       "Bash(*/api/v1/auth*)",
       "Bash(*TAIGA_PASSWORD*)",
       "Bash(*TAIGA_USERNAME*)",

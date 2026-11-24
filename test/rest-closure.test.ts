@@ -47,7 +47,7 @@ const denied = (tool, arg) => rules.filter((r) => r.startsWith(`${tool}(`)).some
 test("deny rules: the credential file, the Taiga API, TAIGA_* variables and /proc environ are out of the tool surface; the sanctioned helper is not", () => {
   for (const cmd of [
     "cat ~/.config/taiga-mcp/env", '. "$HOME/.config/taiga-mcp/env"', "set -a; source /home/dev/.config/taiga-mcp/env", "grep PASSWORD /home/dev/.config/taiga-mcp/env", "cut -d= -f1 ~/.config/taiga-mcp/env",
-    "curl -s -X PATCH http://192.168.1.95:9000/api/v1/tasks/5 -d '{\"status\":2}'", "curl http://192.168.1.95:9000/api/v1/auth", "echo $TAIGA_PASSWORD", "env | grep TAIGA_USERNAME",
+    "curl -s -X PATCH http://taiga.example:9000/api/v1/tasks/5 -d '{\"status\":2}'", "curl http://taiga.example:9000/api/v1/auth", "echo $TAIGA_PASSWORD", "env | grep TAIGA_USERNAME",
     "cat /proc/1321263/environ | tr '\\0' '\\n'", "ps eww -p 1321263", "printenv | grep TAIGA",
   ]) assert.ok(denied("Bash", cmd), `must be denied: ${cmd}`);
   for (const p of ["/home/dev/.config/taiga-mcp/env", "/proc/1321263/environ"]) assert.ok(denied("Read", `/${p.replace(/^\//, "")}`) || rules.some((r) => r.startsWith("Read(") && re(r.slice(5, -1).replace(/^\/\//, "/")).test(p)), `Read must be denied: ${p}`);
