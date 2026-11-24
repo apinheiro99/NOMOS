@@ -1,0 +1,36 @@
+{
+  "name": "taiga-mcp",
+  "version": "1.0.0",
+  "description": "MCP Server for Taiga project management - Full API coverage",
+  "type": "module",
+  "main": "dist/index.js",
+  "bin": {
+    "taiga-mcp": "dist/index.js",
+    "taiga-mcp-governance": "dist/governance-cli.js"
+  },
+  "files": [
+    "dist",
+    "workflow/templates"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "dev": "tsx src/index.ts",
+    "auth:keygen": "node scripts/auth-keygen.ts",
+    "gitgate": "node ../gitgate/bin/gitgate.ts"
+  },
+  "keywords": [
+    "mcp",
+    "taiga",
+    "project-management"
+  ],
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.12.1",
+    "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.8.0"
+  }
+}

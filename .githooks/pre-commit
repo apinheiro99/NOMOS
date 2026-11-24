@@ -1,0 +1,21 @@
+#!/bin/sh
+# Blocks ANY direct commit, on ANY branch, unless the current branch is a
+# freshly-created task branch following the claude-tooling:git naming
+# convention (type/name). This is intentionally a blanket rule: main,
+# develop, and any other branch name (including ones you just created by
+# hand, e.g. "xyz" or "develop/xpto") are all commit-blocked. The only
+# way to commit is: create a type-prefixed branch off whatever branch
+# you're on, commit there, then `git merge --no-ff` it back.
+branch=$(git symbolic-ref --short HEAD 2>/dev/null)
+
+allowed_prefix='^(feature|fix|docs|config|chore|refactor|test|ci|build|perf|security|revert)/'
+
+if ! printf '%s' "$branch" | grep -qE "$allowed_prefix"; then
+  echo "ERROR: direct commit on '$branch' is not allowed." >&2
+  echo "Every commit must happen on a fresh task branch." >&2
+  echo "Create one first: git checkout -b <type>/<name>   (types: feature fix docs config chore refactor test ci build perf security revert)" >&2
+  echo "Then merge it back: git checkout '$branch' && git merge --no-ff <type>/<name>" >&2
+  exit 1
+fi
+
+exit 0

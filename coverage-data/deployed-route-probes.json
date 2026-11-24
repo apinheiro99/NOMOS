@@ -1,0 +1,1876 @@
+[
+ {
+  "router_key": "locales",
+  "request": "GET /locales",
+  "observed": "ok",
+  "shape": {
+   "type": "array",
+   "length": 27,
+   "item_keys": [
+    "code",
+    "name",
+    "bidi"
+   ]
+  }
+ },
+ {
+  "router_key": "locales",
+  "request": "GET /locales?project=49",
+  "observed": "ok",
+  "shape": {
+   "type": "array",
+   "length": 27,
+   "item_keys": [
+    "code",
+    "name",
+    "bidi"
+   ]
+  }
+ },
+ {
+  "router_key": "auth",
+  "request": "GET /auth",
+  "observed": "error",
+  "shape": null
+ },
+ {
+  "router_key": "auth",
+  "request": "GET /auth?project=49",
+  "observed": "error",
+  "shape": null
+ },
+ {
+  "router_key": "users",
+  "request": "GET /users",
+  "observed": "ok",
+  "shape": {
+   "type": "array",
+   "length": 1,
+   "item_keys": [
+    "id",
+    "username",
+    "full_name",
+    "full_name_display",
+    "color",
+    "bio",
+    "lang",
+    "theme",
+    "timezone",
+    "is_active",
+    "photo",
+    "big_photo",
+    "gravatar_id",
+    "roles"
+   ]
+  }
+ },
+ {
+  "router_key": "users",
+  "request": "GET /users?project=49",
+  "observed": "404",
+  "shape": null
+ },
+ {
+  "router_key": "roles",
+  "request": "GET /roles",
+  "observed": "ok",
+  "shape": {
+   "type": "array",
+   "length": 30,
+   "item_keys": [
+    "id",
+    "name",
+    "slug",
+    "project",
+    "order",
+    "computable",
+    "permissions",
+    "members_count"
+   ]
+  }
+ },
+ {
+  "router_key": "roles",
+  "request": "GET /roles?project=49",
+  "observed": "ok",
+  "shape": {
+   "type": "array",
+   "length": 0,
+   "item_keys": []
+  }
+ },
+ {
+  "router_key": "user-storage",
+  "request": "GET /user-storage",
+  "observed": "ok",
+  "shape": {
+   "type": "array",
+   "length": 2,
+   "item_keys": [
+    "key",
+    "value",
+    "created_date",
+    "modified_date"
+   ]
+  }
+ },
+ {
+  "router_key": "user-storage",
+  "request": "GET /user-storage?project=49",
+  "observed": "ok",
+  "shape": {
+   "type": "array",
+   "length": 2,
+   "item_keys": [
+    "key",
+    "value",
+    "created_date",
+    "modified_date"
+   ]
+  }
+ },
+ {
+  "router_key": "notify-policies",
+  "request": "GET /notify-policies",
+  "observed": "ok",
+  "shape": {
+   "type": "array",
+   "length": 10,
+   "item_keys": [
+    "id",
+    "project",
+    "project_name",
+    "notify_level",
+    "live_notify_level",
+    "web_notify_level"
+   ]
+  }
+ },
+ {
+  "router_key": "notify-policies",
+  "request": "GET /notify-policies?project=49",
+  "observed": "ok",
+  "shape": {
+   "type": "array",
+   "length": 10,
+   "item_keys": [
+    "id",
+    "project",
+    "project_name",
+    "notify_level",
+    "live_notify_level",
+    "web_notify_level"
+   ]
+  }
+ },
+ {
+  "router_key": "web-notifications",
+  "request": "GET /web-notifications",
+  "observed": "ok",
+  "shape": {
+   "type": "object",
+   "keys": [
+    "objects",
+    "total"
+   ]
+  }
+ },
+ {
+  "router_key": "web-notifications",
+  "request": "GET /web-notifications?project=49",
+  "observed": "ok",
+  "shape": {
+   "type": "object",
+   "keys": [
+    "objects",
+    "total"
+   ]
+  }
+ },
+ {
+  "router_key": "web-notifications/set-as-read",
+  "request": "GET /web-notifications/set-as-read",
+  "observed": "ok",
+  "shape": {
+   "type": "object",
+   "keys": [
+    "objects",
+    "total"
+   ]
+  }
+ },
+ {
+  "router_key": "web-notifications/set-as-read",
+  "request": "GET /web-notifications/set-as-read?project=49",
+  "observed": "ok",
+  "shape": {
+   "type": "object",
+   "keys": [
+    "objects",
+    "total"
+   ]
+  }
+ },
+ {
+  "router_key": "web-notifications/(?P<resource_id>\\d+)/set-as-read",
+  "request": "GET /web-notifications/1/set-as-read",
+  "observed": "500",
+  "shape": null
+ },
+ {
+  "router_key": "user-project-settings",
+  "request": "GET /user-project-settings",
+  "observed": "ok",
+  "shape": {
+   "type": "array",
+   "length": 9,
+   "item_keys": [
+    "id",
+    "project",
+    "project_name",
+    "homepage",
+    "allowed_sections"
+   ]
+  }
+ },
+ {
+  "router_key": "user-project-settings",
+  "request": "GET /user-project-settings?project=49",
+  "observed": "ok",
+  "shape": {
+   "type": "array",
+   "length": 0,
+   "item_keys": []
+  }
+ },
+ {
+  "router_key": "sections",
+  "request": "GET /sections",
+  "observed": "ok",
+  "shape": {
+   "type": "array",
+   "length": 6,
+   "item_keys": [
+    "0",
+    "1"
+   ]
+  }
+ },
+ {
+  "router_key": "sections",
+  "request": "GET /sections?project=49",
+  "observed": "ok",
+  "shape": {
+   "type": "array",
+   "length": 6,
+   "item_keys": [
+    "0",
+    "1"
+   ]
+  }
+ },
+ {
+  "router_key": "projects",
+  "request": "GET /projects",
+  "observed": "ok",
+  "shape": {
+   "type": "array",
+   "length": 12,
+   "item_keys": [
+    "id",
+    "name",
+    "slug",
+    "description",
+    "created_date",
+    "modified_date",
+    "owner",
+    "members",
+    "total_milestones",
+    "total_story_points",
+    "is_contact_activated",
+    "is_epics_activated",
+    "is_backlog_activated",
+    "is_kanban_activated",
+    "is_wiki_activated",
+    "is_issues_activated",
+    "videoconferences",
+    "videoconferences_extra_data",
+    "creation_template",
+    "is_private",
+    "anon_permissions",
+    "public_permissions",
+    "is_featured",
+    "is_looking_for_people",
+    "looking_for_people_note",
+    "blocked_code",
+    "archived_code",
+    "totals_updated_datetime",
+    "total_fans",
+    "total_fans_last_week",
+    "total_fans_last_month",
+    "total_fans_last_year",
+    "total_activity",
+    "total_activity_last_week",
+    "total_activity_last_month",
+    "total_activity_last_year",
+    "tags",
+    "tags_colors",
+    "default_epic_status",
+    "default_points"
+   ]
+  }
+ },
+ {
+  "router_key": "projects",
+  "request": "GET /projects?project=49",
+  "observed": "ok",
+  "shape": {
+   "type": "array",
+   "length": 12,
+   "item_keys": [
+    "id",
+    "name",
+    "slug",
+    "description",
+    "created_date",
+    "modified_date",
+    "owner",
+    "members",
+    "total_milestones",
+    "total_story_points",
+    "is_contact_activated",
+    "is_epics_activated",
+    "is_backlog_activated",
+    "is_kanban_activated",
+    "is_wiki_activated",
+    "is_issues_activated",
+    "videoconferences",
+    "videoconferences_extra_data",
+    "creation_template",
+    "is_private",
+    "anon_permissions",
+    "public_permissions",
+    "is_featured",
+    "is_looking_for_people",
+    "looking_for_people_note",
+    "blocked_code",
+    "archived_code",
+    "totals_updated_datetime",
+    "total_fans",
+    "total_fans_last_week",
+    "total_fans_last_month",
+    "total_fans_last_year",
+    "total_activity",
+    "total_activity_last_week",
+    "total_activity_last_month",
+    "total_activity_last_year",
+    "tags",
+    "tags_colors",
+    "default_epic_status",
+    "default_points"
+   ]
+  }
+ },
+ {
+  "router_key": "projects/(?P<resource_id>\\d+)/fans",
+  "request": "GET /projects/1/fans",
+  "observed": "404",
+  "shape": null
+ },
+ {
+  "router_key": "projects/(?P<resource_id>\\d+)/watchers",
+  "request": "GET /projects/1/watchers",
+  "observed": "404",
+  "shape": null
+ },
+ {
+  "router_key": "project-templates",
+  "request": "GET /project-templates",
+  "observed": "ok",
+  "shape": {
+   "type": "array",
+   "length": 3,
+   "item_keys": [
+    "id",
+    "name",
+    "slug",
+    "description",
+    "order",
+    "created_date",
+    "modified_date",
+    "default_owner_role",
+    "is_contact_activated",
+    "is_epics_activated",
+    "is_backlog_activated",
+    "is_kanban_activated",
+    "is_wiki_activated",
+    "is_issues_activated",
+    "videoconferences",
+    "videoconferences_extra_data",
+    "default_options",
+    "epic_statuses",
+    "us_statuses",
+    "points",
+    "task_statuses",
+    "issue_statuses",
+    "issue_types",
+    "priorities",
+    "severities",
+    "roles"
+   ]
+  }
+ },
+ {
+  "router_key": "project-templates",
+  "request": "GET /project-templates?project=49",
+  "observed": "ok",
+  "shape": {
+   "type": "array",
+   "length": 3,
+   "item_keys": [
+    "id",
+    "name",
+    "slug",
+    "description",
+    "order",
+    "created_date",
+    "modified_date",
+    "default_owner_role",
+    "is_contact_activated",
+    "is_epics_activated",
+    "is_backlog_activated",
+    "is_kanban_activated",
+    "is_wiki_activated",
+    "is_issues_activated",
+    "videoconferences",
+    "videoconferences_extra_data",
+    "default_options",
+    "epic_statuses",
+    "us_statuses",
+    "points",
+    "task_statuses",
+    "issue_statuses",
+    "issue_types",
+    "priorities",
+    "severities",
+    "roles"
+   ]
+  }
+ },
+ {
+  "router_key": "memberships",
+  "request": "GET /memberships",
+  "observed": "ok",
+  "shape": {
+   "type": "array",
+   "length": 9,
+   "item_keys": [
+    "id",
+    "user",
+    "project",
+    "role",
+    "is_admin",
+    "created_at",
+    "invited_by",
+    "invitation_extra_text",
+    "user_order",
+    "role_name",
+    "full_name",
+    "is_user_active",
+    "color",
+    "photo",
+    "gravatar_id",
+    "project_name",
+    "project_slug",
+    "is_owner"
+   ]
+  }
+ },
+ {
+  "router_key": "memberships",
+  "request": "GET /memberships?project=49",
+  "observed": "404",
+  "shape": null
+ },
+ {
+  "router_key": "invitations",
+  "request": "GET /invitations",
+  "observed": "403",
+  "shape": null
+ },
+ {
+  "router_key": "invitations",
+  "request": "GET /invitations?project=49",
+  "observed": "403",
+  "shape": null
+ },
+ {
+  "router_key": "epic-statuses",
+  "request": "GET /epic-statuses",
+  "observed": "ok",
+  "shape": {
+   "type": "array",
+   "length": 30,
+   "item_keys": [
+    "id",
+    "name",
+    "slug",
+    "order",
+    "is_closed",
+    "color",
+    "project"
+   ]
+  }
+ },
+ {
+  "router_key": "epic-statuses",
+  "request": "GET /epic-statuses?project=49",
+  "observed": "ok",
+  "shape": {
+   "type": "array",
+   "length": 0,
+   "item_keys": []
+  }
+ },
+ {
+  "router_key": "userstory-statuses",
+  "request": "GET /userstory-statuses",
+  "observed": "ok",
+  "shape": {
+   "type": "array",
+   "length": 30,
+   "item_keys": [
+    "id",
+    "name",
+    "slug",
+    "order",
+    "is_closed",
+    "is_archived",
+    "color",
+    "wip_limit",
+    "project"
+   ]
+  }
+ },
+ {
+  "router_key": "userstory-statuses",
+  "request": "GET /userstory-statuses?project=49",
+  "observed": "ok",
+  "shape": {
+   "type": "array",
+   "length": 0,
+   "item_keys": []
+  }
+ },
+ {
+  "router_key": "points",
+  "request": "GET /points",
+  "observed": "ok",
+  "shape": {
+   "type": "array",
+   "length": 30,
+   "item_keys": [
+    "id",
+    "name",
+    "order",
+    "value",
+    "project"
+   ]
+  }
+ },
+ {
+  "router_key": "points",
+  "request": "GET /points?project=49",
+  "observed": "ok",
+  "shape": {
+   "type": "array",
+   "length": 0,
+   "item_keys": []
+  }
+ },
+ {
+  "router_key": "swimlanes",
+  "request": "GET /swimlanes",
+  "observed": "ok",
+  "shape": {
+   "type": "array",
+   "length": 0,
+   "item_keys": []
+  }
+ },
+ {
+  "router_key": "swimlanes",
+  "request": "GET /swimlanes?project=49",
+  "observed": "ok",
+  "shape": {
+   "type": "array",
+   "length": 0,
+   "item_keys": []
+  }
+ },
+ {
+  "router_key": "swimlane-userstory-statuses",
+  "request": "GET /swimlane-userstory-statuses",
+  "observed": "ok",
+  "shape": {
+   "type": "array",
+   "length": 0,
+   "item_keys": []
+  }
+ },
+ {
+  "router_key": "swimlane-userstory-statuses",
+  "request": "GET /swimlane-userstory-statuses?project=49",
+  "observed": "500",
+  "shape": null
+ },
+ {
+  "router_key": "userstory-due-dates",
+  "request": "GET /userstory-due-dates",
+  "observed": "ok",
+  "shape": {
+   "type": "array",
+   "length": 30,
+   "item_keys": [
+    "id",
+    "name",
+    "order",
+    "by_default",
+    "days_to_due",
+    "color",
+    "project"
+   ]
+  }
+ },
+ {
+  "router_key": "userstory-due-dates",
+  "request": "GET /userstory-due-dates?project=49",
+  "observed": "ok",
+  "shape": {
+   "type": "array",
+   "length": 0,
+   "item_keys": []
+  }
+ },
+ {
+  "router_key": "task-statuses",
+  "request": "GET /task-statuses",
+  "observed": "ok",
+  "shape": {
+   "type": "array",
+   "length": 30,
+   "item_keys": [
+    "id",
+    "name",
+    "slug",
+    "order",
+    "is_closed",
+    "color",
+    "project"
+   ]
+  }
+ },
+ {
+  "router_key": "task-statuses",
+  "request": "GET /task-statuses?project=49",
+  "observed": "ok",
+  "shape": {
+   "type": "array",
+   "length": 0,
+   "item_keys": []
+  }
+ },
+ {
+  "router_key": "task-due-dates",
+  "request": "GET /task-due-dates",
+  "observed": "ok",
+  "shape": {
+   "type": "array",
+   "length": 30,
+   "item_keys": [
+    "id",
+    "name",
+    "order",
+    "by_default",
+    "days_to_due",
+    "color",
+    "project"
+   ]
+  }
+ },
+ {
+  "router_key": "task-due-dates",
+  "request": "GET /task-due-dates?project=49",
+  "observed": "ok",
+  "shape": {
+   "type": "array",
+   "length": 0,
+   "item_keys": []
+  }
+ },
+ {
+  "router_key": "issue-statuses",
+  "request": "GET /issue-statuses",
+  "observed": "ok",
+  "shape": {
+   "type": "array",
+   "length": 30,
+   "item_keys": [
+    "id",
+    "name",
+    "slug",
+    "order",
+    "is_closed",
+    "color",
+    "project"
+   ]
+  }
+ },
+ {
+  "router_key": "issue-statuses",
+  "request": "GET /issue-statuses?project=49",
+  "observed": "ok",
+  "shape": {
+   "type": "array",
+   "length": 0,
+   "item_keys": []
+  }
+ },
+ {
+  "router_key": "issue-types",
+  "request": "GET /issue-types",
+  "observed": "ok",
+  "shape": {
+   "type": "array",
+   "length": 30,
+   "item_keys": [
+    "id",
+    "name",
+    "order",
+    "color",
+    "project"
+   ]
+  }
+ },
+ {
+  "router_key": "issue-types",
+  "request": "GET /issue-types?project=49",
+  "observed": "ok",
+  "shape": {
+   "type": "array",
+   "length": 0,
+   "item_keys": []
+  }
+ },
+ {
+  "router_key": "issue-due-dates",
+  "request": "GET /issue-due-dates",
+  "observed": "ok",
+  "shape": {
+   "type": "array",
+   "length": 30,
+   "item_keys": [
+    "id",
+    "name",
+    "order",
+    "by_default",
+    "days_to_due",
+    "color",
+    "project"
+   ]
+  }
+ },
+ {
+  "router_key": "issue-due-dates",
+  "request": "GET /issue-due-dates?project=49",
+  "observed": "ok",
+  "shape": {
+   "type": "array",
+   "length": 0,
+   "item_keys": []
+  }
+ },
+ {
+  "router_key": "priorities",
+  "request": "GET /priorities",
+  "observed": "ok",
+  "shape": {
+   "type": "array",
+   "length": 30,
+   "item_keys": [
+    "id",
+    "name",
+    "order",
+    "color",
+    "project"
+   ]
+  }
+ },
+ {
+  "router_key": "priorities",
+  "request": "GET /priorities?project=49",
+  "observed": "ok",
+  "shape": {
+   "type": "array",
+   "length": 0,
+   "item_keys": []
+  }
+ },
+ {
+  "router_key": "severities",
+  "request": "GET /severities",
+  "observed": "ok",
+  "shape": {
+   "type": "array",
+   "length": 30,
+   "item_keys": [
+    "id",
+    "name",
+    "order",
+    "color",
+    "project"
+   ]
+  }
+ },
+ {
+  "router_key": "severities",
+  "request": "GET /severities?project=49",
+  "observed": "ok",
+  "shape": {
+   "type": "array",
+   "length": 0,
+   "item_keys": []
+  }
+ },
+ {
+  "router_key": "epic-custom-attributes",
+  "request": "GET /epic-custom-attributes",
+  "observed": "ok",
+  "shape": {
+   "type": "array",
+   "length": 4,
+   "item_keys": [
+    "id",
+    "name",
+    "description",
+    "type",
+    "order",
+    "project",
+    "extra",
+    "created_date",
+    "modified_date"
+   ]
+  }
+ },
+ {
+  "router_key": "epic-custom-attributes",
+  "request": "GET /epic-custom-attributes?project=49",
+  "observed": "ok",
+  "shape": {
+   "type": "array",
+   "length": 0,
+   "item_keys": []
+  }
+ },
+ {
+  "router_key": "userstory-custom-attributes",
+  "request": "GET /userstory-custom-attributes",
+  "observed": "ok",
+  "shape": {
+   "type": "array",
+   "length": 7,
+   "item_keys": [
+    "id",
+    "name",
+    "description",
+    "type",
+    "order",
+    "project",
+    "extra",
+    "created_date",
+    "modified_date"
+   ]
+  }
+ },
+ {
+  "router_key": "userstory-custom-attributes",
+  "request": "GET /userstory-custom-attributes?project=49",
+  "observed": "ok",
+  "shape": {
+   "type": "array",
+   "length": 0,
+   "item_keys": []
+  }
+ },
+ {
+  "router_key": "task-custom-attributes",
+  "request": "GET /task-custom-attributes",
+  "observed": "ok",
+  "shape": {
+   "type": "array",
+   "length": 7,
+   "item_keys": [
+    "id",
+    "name",
+    "description",
+    "type",
+    "order",
+    "project",
+    "extra",
+    "created_date",
+    "modified_date"
+   ]
+  }
+ },
+ {
+  "router_key": "task-custom-attributes",
+  "request": "GET /task-custom-attributes?project=49",
+  "observed": "ok",
+  "shape": {
+   "type": "array",
+   "length": 0,
+   "item_keys": []
+  }
+ },
+ {
+  "router_key": "issue-custom-attributes",
+  "request": "GET /issue-custom-attributes",
+  "observed": "ok",
+  "shape": {
+   "type": "array",
+   "length": 4,
+   "item_keys": [
+    "id",
+    "name",
+    "description",
+    "type",
+    "order",
+    "project",
+    "extra",
+    "created_date",
+    "modified_date"
+   ]
+  }
+ },
+ {
+  "router_key": "issue-custom-attributes",
+  "request": "GET /issue-custom-attributes?project=49",
+  "observed": "ok",
+  "shape": {
+   "type": "array",
+   "length": 0,
+   "item_keys": []
+  }
+ },
+ {
+  "router_key": "epics/custom-attributes-values",
+  "request": "GET /epics/custom-attributes-values",
+  "observed": "404",
+  "shape": null
+ },
+ {
+  "router_key": "epics/custom-attributes-values",
+  "request": "GET /epics/custom-attributes-values?project=49",
+  "observed": "404",
+  "shape": null
+ },
+ {
+  "router_key": "userstories/custom-attributes-values",
+  "request": "GET /userstories/custom-attributes-values",
+  "observed": "404",
+  "shape": null
+ },
+ {
+  "router_key": "userstories/custom-attributes-values",
+  "request": "GET /userstories/custom-attributes-values?project=49",
+  "observed": "404",
+  "shape": null
+ },
+ {
+  "router_key": "tasks/custom-attributes-values",
+  "request": "GET /tasks/custom-attributes-values",
+  "observed": "404",
+  "shape": null
+ },
+ {
+  "router_key": "tasks/custom-attributes-values",
+  "request": "GET /tasks/custom-attributes-values?project=49",
+  "observed": "404",
+  "shape": null
+ },
+ {
+  "router_key": "issues/custom-attributes-values",
+  "request": "GET /issues/custom-attributes-values",
+  "observed": "404",
+  "shape": null
+ },
+ {
+  "router_key": "issues/custom-attributes-values",
+  "request": "GET /issues/custom-attributes-values?project=49",
+  "observed": "404",
+  "shape": null
+ },
+ {
+  "router_key": "search",
+  "request": "GET /search",
+  "observed": "404",
+  "shape": null
+ },
+ {
+  "router_key": "search",
+  "request": "GET /search?project=49",
+  "observed": "404",
+  "shape": null
+ },
+ {
+  "router_key": "resolver",
+  "request": "GET /resolver",
+  "observed": "400",
+  "shape": null
+ },
+ {
+  "router_key": "resolver",
+  "request": "GET /resolver?project=49",
+  "observed": "404",
+  "shape": null
+ },
+ {
+  "router_key": "epics/attachments",
+  "request": "GET /epics/attachments",
+  "observed": "ok",
+  "shape": {
+   "type": "array",
+   "length": 0,
+   "item_keys": []
+  }
+ },
+ {
+  "router_key": "epics/attachments",
+  "request": "GET /epics/attachments?project=49",
+  "observed": "ok",
+  "shape": {
+   "type": "array",
+   "length": 0,
+   "item_keys": []
+  }
+ },
+ {
+  "router_key": "userstories/attachments",
+  "request": "GET /userstories/attachments",
+  "observed": "ok",
+  "shape": {
+   "type": "array",
+   "length": 12,
+   "item_keys": [
+    "id",
+    "project",
+    "owner",
+    "name",
+    "attached_file",
+    "size",
+    "url",
+    "description",
+    "is_deprecated",
+    "from_comment",
+    "created_date",
+    "modified_date",
+    "object_id",
+    "order",
+    "sha1",
+    "thumbnail_card_url",
+    "preview_url"
+   ]
+  }
+ },
+ {
+  "router_key": "userstories/attachments",
+  "request": "GET /userstories/attachments?project=49",
+  "observed": "ok",
+  "shape": {
+   "type": "array",
+   "length": 0,
+   "item_keys": []
+  }
+ },
+ {
+  "router_key": "tasks/attachments",
+  "request": "GET /tasks/attachments",
+  "observed": "ok",
+  "shape": {
+   "type": "array",
+   "length": 8,
+   "item_keys": [
+    "id",
+    "project",
+    "owner",
+    "name",
+    "attached_file",
+    "size",
+    "url",
+    "description",
+    "is_deprecated",
+    "from_comment",
+    "created_date",
+    "modified_date",
+    "object_id",
+    "order",
+    "sha1",
+    "thumbnail_card_url",
+    "preview_url"
+   ]
+  }
+ },
+ {
+  "router_key": "tasks/attachments",
+  "request": "GET /tasks/attachments?project=49",
+  "observed": "ok",
+  "shape": {
+   "type": "array",
+   "length": 0,
+   "item_keys": []
+  }
+ },
+ {
+  "router_key": "issues/attachments",
+  "request": "GET /issues/attachments",
+  "observed": "ok",
+  "shape": {
+   "type": "array",
+   "length": 2,
+   "item_keys": [
+    "id",
+    "project",
+    "owner",
+    "name",
+    "attached_file",
+    "size",
+    "url",
+    "description",
+    "is_deprecated",
+    "from_comment",
+    "created_date",
+    "modified_date",
+    "object_id",
+    "order",
+    "sha1",
+    "thumbnail_card_url",
+    "preview_url"
+   ]
+  }
+ },
+ {
+  "router_key": "issues/attachments",
+  "request": "GET /issues/attachments?project=49",
+  "observed": "ok",
+  "shape": {
+   "type": "array",
+   "length": 0,
+   "item_keys": []
+  }
+ },
+ {
+  "router_key": "wiki/attachments",
+  "request": "GET /wiki/attachments",
+  "observed": "ok",
+  "shape": {
+   "type": "array",
+   "length": 1,
+   "item_keys": [
+    "id",
+    "project",
+    "owner",
+    "name",
+    "attached_file",
+    "size",
+    "url",
+    "description",
+    "is_deprecated",
+    "from_comment",
+    "created_date",
+    "modified_date",
+    "object_id",
+    "order",
+    "sha1",
+    "thumbnail_card_url",
+    "preview_url"
+   ]
+  }
+ },
+ {
+  "router_key": "wiki/attachments",
+  "request": "GET /wiki/attachments?project=49",
+  "observed": "ok",
+  "shape": {
+   "type": "array",
+   "length": 0,
+   "item_keys": []
+  }
+ },
+ {
+  "router_key": "milestones",
+  "request": "GET /milestones",
+  "observed": "ok",
+  "shape": {
+   "type": "array",
+   "length": 30,
+   "item_keys": [
+    "project",
+    "project_extra_info",
+    "id",
+    "name",
+    "slug",
+    "owner",
+    "estimated_start",
+    "estimated_finish",
+    "created_date",
+    "modified_date",
+    "closed",
+    "disponibility",
+    "order",
+    "user_stories",
+    "total_points",
+    "closed_points"
+   ]
+  }
+ },
+ {
+  "router_key": "milestones",
+  "request": "GET /milestones?project=49",
+  "observed": "ok",
+  "shape": {
+   "type": "array",
+   "length": 0,
+   "item_keys": []
+  }
+ },
+ {
+  "router_key": "milestones/(?P<resource_id>\\d+)/watchers",
+  "request": "GET /milestones/1/watchers",
+  "observed": "404",
+  "shape": null
+ },
+ {
+  "router_key": "epics",
+  "request": "GET /epics",
+  "observed": "ok",
+  "shape": {
+   "type": "array",
+   "length": 30,
+   "item_keys": [
+    "tags",
+    "attachments",
+    "project",
+    "project_extra_info",
+    "status",
+    "status_extra_info",
+    "assigned_to",
+    "assigned_to_extra_info",
+    "owner",
+    "owner_extra_info",
+    "is_watcher",
+    "total_watchers",
+    "is_voter",
+    "total_voters",
+    "id",
+    "ref",
+    "created_date",
+    "modified_date",
+    "subject",
+    "color",
+    "epics_order",
+    "client_requirement",
+    "team_requirement",
+    "version",
+    "watchers",
+    "is_blocked",
+    "blocked_note",
+    "is_closed",
+    "user_stories_counts"
+   ]
+  }
+ },
+ {
+  "router_key": "epics",
+  "request": "GET /epics?project=49",
+  "observed": "ok",
+  "shape": {
+   "type": "array",
+   "length": 0,
+   "item_keys": []
+  }
+ },
+ {
+  "router_key": "epics/(?P<epic>[^/.]+)/related_userstories",
+  "request": "GET /epics/1/related_userstories",
+  "observed": "ok",
+  "shape": {
+   "type": "array",
+   "length": 0,
+   "item_keys": []
+  }
+ },
+ {
+  "router_key": "epics/(?P<resource_id>\\d+)/voters",
+  "request": "GET /epics/1/voters",
+  "observed": "404",
+  "shape": null
+ },
+ {
+  "router_key": "epics/(?P<resource_id>\\d+)/watchers",
+  "request": "GET /epics/1/watchers",
+  "observed": "404",
+  "shape": null
+ },
+ {
+  "router_key": "userstories",
+  "request": "GET /userstories",
+  "observed": "ok",
+  "shape": {
+   "type": "array",
+   "length": 30,
+   "item_keys": [
+    "due_date",
+    "due_date_reason",
+    "due_date_status",
+    "total_comments",
+    "tags",
+    "attachments",
+    "status",
+    "status_extra_info",
+    "assigned_to",
+    "assigned_to_extra_info",
+    "owner",
+    "owner_extra_info",
+    "is_watcher",
+    "total_watchers",
+    "is_voter",
+    "total_voters",
+    "project",
+    "project_extra_info",
+    "id",
+    "ref",
+    "milestone",
+    "milestone_slug",
+    "milestone_name",
+    "is_closed",
+    "points",
+    "backlog_order",
+    "sprint_order",
+    "kanban_order",
+    "created_date",
+    "modified_date",
+    "finish_date",
+    "subject",
+    "client_requirement",
+    "team_requirement",
+    "generated_from_issue",
+    "generated_from_task",
+    "from_task_ref",
+    "external_reference",
+    "tribe_gig",
+    "version"
+   ]
+  }
+ },
+ {
+  "router_key": "userstories",
+  "request": "GET /userstories?project=49",
+  "observed": "ok",
+  "shape": {
+   "type": "array",
+   "length": 0,
+   "item_keys": []
+  }
+ },
+ {
+  "router_key": "userstories/(?P<resource_id>\\d+)/voters",
+  "request": "GET /userstories/1/voters",
+  "observed": "404",
+  "shape": null
+ },
+ {
+  "router_key": "userstories/(?P<resource_id>\\d+)/watchers",
+  "request": "GET /userstories/1/watchers",
+  "observed": "404",
+  "shape": null
+ },
+ {
+  "router_key": "tasks",
+  "request": "GET /tasks",
+  "observed": "ok",
+  "shape": {
+   "type": "array",
+   "length": 30,
+   "item_keys": [
+    "due_date",
+    "due_date_reason",
+    "due_date_status",
+    "total_comments",
+    "tags",
+    "attachments",
+    "project",
+    "project_extra_info",
+    "status",
+    "status_extra_info",
+    "assigned_to",
+    "assigned_to_extra_info",
+    "owner",
+    "owner_extra_info",
+    "is_watcher",
+    "total_watchers",
+    "is_voter",
+    "total_voters",
+    "id",
+    "user_story",
+    "ref",
+    "milestone",
+    "milestone_slug",
+    "created_date",
+    "modified_date",
+    "finished_date",
+    "subject",
+    "us_order",
+    "taskboard_order",
+    "is_iocaine",
+    "external_reference",
+    "version",
+    "watchers",
+    "is_blocked",
+    "blocked_note",
+    "is_closed",
+    "user_story_extra_info"
+   ]
+  }
+ },
+ {
+  "router_key": "tasks",
+  "request": "GET /tasks?project=49",
+  "observed": "ok",
+  "shape": {
+   "type": "array",
+   "length": 0,
+   "item_keys": []
+  }
+ },
+ {
+  "router_key": "tasks/(?P<resource_id>\\d+)/voters",
+  "request": "GET /tasks/1/voters",
+  "observed": "404",
+  "shape": null
+ },
+ {
+  "router_key": "tasks/(?P<resource_id>\\d+)/watchers",
+  "request": "GET /tasks/1/watchers",
+  "observed": "404",
+  "shape": null
+ },
+ {
+  "router_key": "issues",
+  "request": "GET /issues",
+  "observed": "ok",
+  "shape": {
+   "type": "array",
+   "length": 30,
+   "item_keys": [
+    "tags",
+    "due_date",
+    "due_date_reason",
+    "due_date_status",
+    "attachments",
+    "project",
+    "project_extra_info",
+    "status",
+    "status_extra_info",
+    "assigned_to",
+    "assigned_to_extra_info",
+    "owner",
+    "owner_extra_info",
+    "is_watcher",
+    "total_watchers",
+    "is_voter",
+    "total_voters",
+    "id",
+    "ref",
+    "severity",
+    "priority",
+    "type",
+    "milestone",
+    "created_date",
+    "modified_date",
+    "finished_date",
+    "subject",
+    "external_reference",
+    "version",
+    "watchers",
+    "is_blocked",
+    "blocked_note",
+    "is_closed"
+   ]
+  }
+ },
+ {
+  "router_key": "issues",
+  "request": "GET /issues?project=49",
+  "observed": "ok",
+  "shape": {
+   "type": "array",
+   "length": 0,
+   "item_keys": []
+  }
+ },
+ {
+  "router_key": "issues/(?P<resource_id>\\d+)/voters",
+  "request": "GET /issues/1/voters",
+  "observed": "ok",
+  "shape": {
+   "type": "array",
+   "length": 0,
+   "item_keys": []
+  }
+ },
+ {
+  "router_key": "issues/(?P<resource_id>\\d+)/watchers",
+  "request": "GET /issues/1/watchers",
+  "observed": "ok",
+  "shape": {
+   "type": "array",
+   "length": 0,
+   "item_keys": []
+  }
+ },
+ {
+  "router_key": "wiki",
+  "request": "GET /wiki",
+  "observed": "ok",
+  "shape": {
+   "type": "array",
+   "length": 17,
+   "item_keys": [
+    "project",
+    "project_extra_info",
+    "is_watcher",
+    "total_watchers",
+    "id",
+    "slug",
+    "content",
+    "owner",
+    "last_modifier",
+    "created_date",
+    "modified_date",
+    "html",
+    "editions",
+    "version"
+   ]
+  }
+ },
+ {
+  "router_key": "wiki",
+  "request": "GET /wiki?project=49",
+  "observed": "ok",
+  "shape": {
+   "type": "array",
+   "length": 0,
+   "item_keys": []
+  }
+ },
+ {
+  "router_key": "wiki/(?P<resource_id>\\d+)/watchers",
+  "request": "GET /wiki/1/watchers",
+  "observed": "ok",
+  "shape": {
+   "type": "array",
+   "length": 0,
+   "item_keys": []
+  }
+ },
+ {
+  "router_key": "wiki-links",
+  "request": "GET /wiki-links",
+  "observed": "ok",
+  "shape": {
+   "type": "array",
+   "length": 3,
+   "item_keys": [
+    "id",
+    "project",
+    "title",
+    "href",
+    "order"
+   ]
+  }
+ },
+ {
+  "router_key": "wiki-links",
+  "request": "GET /wiki-links?project=49",
+  "observed": "ok",
+  "shape": {
+   "type": "array",
+   "length": 0,
+   "item_keys": []
+  }
+ },
+ {
+  "router_key": "delete-owned-projects",
+  "request": "GET /delete-owned-projects",
+  "observed": "405",
+  "shape": null
+ },
+ {
+  "router_key": "delete-owned-projects",
+  "request": "GET /delete-owned-projects?project=49",
+  "observed": "405",
+  "shape": null
+ },
+ {
+  "router_key": "history/epic",
+  "request": "GET /history/epic",
+  "observed": "404",
+  "shape": null
+ },
+ {
+  "router_key": "history/epic",
+  "request": "GET /history/epic?project=49",
+  "observed": "404",
+  "shape": null
+ },
+ {
+  "router_key": "history/userstory",
+  "request": "GET /history/userstory",
+  "observed": "404",
+  "shape": null
+ },
+ {
+  "router_key": "history/userstory",
+  "request": "GET /history/userstory?project=49",
+  "observed": "404",
+  "shape": null
+ },
+ {
+  "router_key": "history/task",
+  "request": "GET /history/task",
+  "observed": "404",
+  "shape": null
+ },
+ {
+  "router_key": "history/task",
+  "request": "GET /history/task?project=49",
+  "observed": "404",
+  "shape": null
+ },
+ {
+  "router_key": "history/issue",
+  "request": "GET /history/issue",
+  "observed": "404",
+  "shape": null
+ },
+ {
+  "router_key": "history/issue",
+  "request": "GET /history/issue?project=49",
+  "observed": "404",
+  "shape": null
+ },
+ {
+  "router_key": "history/wiki",
+  "request": "GET /history/wiki",
+  "observed": "404",
+  "shape": null
+ },
+ {
+  "router_key": "history/wiki",
+  "request": "GET /history/wiki?project=49",
+  "observed": "404",
+  "shape": null
+ },
+ {
+  "router_key": "contact",
+  "request": "GET /contact",
+  "observed": "405",
+  "shape": null
+ },
+ {
+  "router_key": "contact",
+  "request": "GET /contact?project=49",
+  "observed": "405",
+  "shape": null
+ },
+ {
+  "router_key": "timeline/profile",
+  "request": "GET /timeline/profile",
+  "observed": "404",
+  "shape": null
+ },
+ {
+  "router_key": "timeline/profile",
+  "request": "GET /timeline/profile?project=49",
+  "observed": "404",
+  "shape": null
+ },
+ {
+  "router_key": "timeline/user",
+  "request": "GET /timeline/user",
+  "observed": "404",
+  "shape": null
+ },
+ {
+  "router_key": "timeline/user",
+  "request": "GET /timeline/user?project=49",
+  "observed": "404",
+  "shape": null
+ },
+ {
+  "router_key": "timeline/project",
+  "request": "GET /timeline/project",
+  "observed": "404",
+  "shape": null
+ },
+ {
+  "router_key": "timeline/project",
+  "request": "GET /timeline/project?project=49",
+  "observed": "404",
+  "shape": null
+ },
+ {
+  "router_key": "webhooks",
+  "request": "GET /webhooks",
+  "observed": "ok",
+  "shape": {
+   "type": "array",
+   "length": 0,
+   "item_keys": []
+  }
+ },
+ {
+  "router_key": "webhooks",
+  "request": "GET /webhooks?project=49",
+  "observed": "ok",
+  "shape": {
+   "type": "array",
+   "length": 0,
+   "item_keys": []
+  }
+ },
+ {
+  "router_key": "webhooklogs",
+  "request": "GET /webhooklogs",
+  "observed": "ok",
+  "shape": {
+   "type": "array",
+   "length": 0,
+   "item_keys": []
+  }
+ },
+ {
+  "router_key": "webhooklogs",
+  "request": "GET /webhooklogs?project=49",
+  "observed": "ok",
+  "shape": {
+   "type": "array",
+   "length": 0,
+   "item_keys": []
+  }
+ },
+ {
+  "router_key": "github-hook",
+  "request": "GET /github-hook",
+  "observed": "405",
+  "shape": null
+ },
+ {
+  "router_key": "github-hook",
+  "request": "GET /github-hook?project=49",
+  "observed": "405",
+  "shape": null
+ },
+ {
+  "router_key": "gitlab-hook",
+  "request": "GET /gitlab-hook",
+  "observed": "405",
+  "shape": null
+ },
+ {
+  "router_key": "gitlab-hook",
+  "request": "GET /gitlab-hook?project=49",
+  "observed": "405",
+  "shape": null
+ },
+ {
+  "router_key": "bitbucket-hook",
+  "request": "GET /bitbucket-hook",
+  "observed": "405",
+  "shape": null
+ },
+ {
+  "router_key": "bitbucket-hook",
+  "request": "GET /bitbucket-hook?project=49",
+  "observed": "405",
+  "shape": null
+ },
+ {
+  "router_key": "gogs-hook",
+  "request": "GET /gogs-hook",
+  "observed": "405",
+  "shape": null
+ },
+ {
+  "router_key": "gogs-hook",
+  "request": "GET /gogs-hook?project=49",
+  "observed": "405",
+  "shape": null
+ },
+ {
+  "router_key": "importer",
+  "request": "GET /importer",
+  "observed": "405",
+  "shape": null
+ },
+ {
+  "router_key": "importer",
+  "request": "GET /importer?project=49",
+  "observed": "405",
+  "shape": null
+ },
+ {
+  "router_key": "exporter",
+  "request": "GET /exporter",
+  "observed": "404",
+  "shape": null
+ },
+ {
+  "router_key": "exporter",
+  "request": "GET /exporter?project=49",
+  "observed": "404",
+  "shape": null
+ },
+ {
+  "router_key": "applications",
+  "request": "GET /applications",
+  "observed": "404",
+  "shape": null
+ },
+ {
+  "router_key": "applications",
+  "request": "GET /applications?project=49",
+  "observed": "404",
+  "shape": null
+ },
+ {
+  "router_key": "application-tokens",
+  "request": "GET /application-tokens",
+  "observed": "ok",
+  "shape": {
+   "type": "array",
+   "length": 0,
+   "item_keys": []
+  }
+ },
+ {
+  "router_key": "application-tokens",
+  "request": "GET /application-tokens?project=49",
+  "observed": "ok",
+  "shape": {
+   "type": "array",
+   "length": 0,
+   "item_keys": []
+  }
+ }
+]

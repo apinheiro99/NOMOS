@@ -1,0 +1,140 @@
+# Taiga MCP CI: typecheck/build + the whole (mock-based, no live Taiga) test suite on every push, and the result recorded as a Git
+# tag on the tested SHA of every push pipeline (any branch) (same mechanism as SCOPE, see docs/ci-publish-feedback.md):
+#   green -> vYYYY.MM.NNNNNN   red -> vYYYY.MM.NNNNNN-fail   canceled -> nothing
+# (NNNNNN = CI_PIPELINE_IID zero-padded to 6 digits, YYYY.MM = month of CI_PIPELINE_CREATED_AT; a passing retry replaces the pipeline's -fail tag)
+# The shared runner is selected by the `scope` tag.
+stages:
+  - test
+  - tag
+
+default:
+  image: node:22-bookworm
+  interruptible: true
+
+variables:
+  npm_config_cache: "$CI_PROJECT_DIR/.npm"
+
+cache:
+  key:
+    files:
+      - pnpm-lock.yaml
+  paths:
+    - .npm/
+  policy: pull-push
+
+test:
+  stage: test
+  tags:
+    - scope
+  timeout: 20m
+  rules:
+    # Result tags are pushed by the tag stage: a tag pipeline must never run the suite again.
+    - if: '$CI_COMMIT_TAG'
+      when: never
+    - if: '$CI_PIPELINE_SOURCE == "push"'
+  before_script:
+    - corepack enable
+    - corepack prepare pnpm@10 --activate
+    - pnpm install --frozen-lockfile --ignore-scripts
+  script:
+    - pnpm exec tsc
+    # TAP so the summary can parse it; pipefail keeps the suite's real exit status.
+    - bash -o pipefail -c 'node --test --test-reporter=tap test/*.test.ts 2>&1 | tee test-run.log'
+  # Runs even when the suite failed. CI evidence only (never workflow authority): validation-summary.{json,md} next to the full log.
+  after_script:
+    - node scripts/validation-summary.ts test-run.log ci-results
+  artifacts:
+    when: always
+    expire_in: 7 days
+    paths:
+      - test-run.log
+      - ci-results/
+
+# ── CI result as a Git tag on the exact tested SHA ─────────────────────────────────────────────────────────────────────────
+# Authenticates with the job's own CI_JOB_TOKEN: the project setting ci_push_repository_for_job_token_allowed must be on (set through
+# the GitLab MCP update_project); no stored credential. A failing tag job never turns a green suite red (allow_failure) but is loud.
+.ci-tag:
+  stage: tag
+  tags:
+    - scope
+  interruptible: false
+  cache: []
+  variables:
+    GIT_DEPTH: "0"
+  script:
+    # The server certificate is internal: git inside this container trusts only what the runner hands it (never turn verification off).
+    - 'if [ -n "$CI_SERVER_TLS_CA_FILE" ]; then export GIT_SSL_CAINFO="$CI_SERVER_TLS_CA_FILE"; else echo "CI_SERVER_TLS_CA_FILE is not set: git will use the image trust store"; fi'
+    - export GIT_CI_PUSH_URL="https://gitlab-ci-token:${CI_JOB_TOKEN}@${CI_SERVER_HOST}/${CI_PROJECT_PATH}.git"
+    - node scripts/git-ci/cli.ts tag --result "$CI_TAG_RESULT" --sha "$CI_COMMIT_SHA" --pipeline-iid "$CI_PIPELINE_IID" --pipeline-created-at "$CI_PIPELINE_CREATED_AT" ${CI_SELFTEST:+--sandbox}
+  allow_failure: true
+
+ci-tag-green:
+  extends: .ci-tag
+  variables:
+    CI_TAG_RESULT: pass
+    GIT_DEPTH: "0"
+  rules:
+    - if: '$CI_COMMIT_TAG'
+      when: never
+    - if: '$CI_SELFTEST =~ /^(green|canceled)$/ && ($CI_PIPELINE_SOURCE == "api" || $CI_PIPELINE_SOURCE == "web")'
+      when: on_success
+    - if: '$CI_PIPELINE_SOURCE == "push"'
+      when: on_success
+
+ci-tag-red:
+  extends: .ci-tag
+  variables:
+    CI_TAG_RESULT: fail
+    GIT_DEPTH: "0"
+  rules:
+    - if: '$CI_COMMIT_TAG'
+      when: never
+    - if: '$CI_SELFTEST =~ /^(red|canceled)$/ && ($CI_PIPELINE_SOURCE == "api" || $CI_PIPELINE_SOURCE == "web")'
+      when: on_failure
+    - if: '$CI_PIPELINE_SOURCE == "push"'
+      when: on_failure
+
+# Canary for the tag path, WITHOUT the suite: runs only in a pipeline created on purpose with CI_SELFTEST=tag-path.
+ci-tag-selftest:
+  extends: .ci-tag
+  needs: []
+  allow_failure: false
+  variables:
+    GIT_DEPTH: "0"
+  rules:
+    - if: '$CI_COMMIT_TAG'
+      when: never
+    - if: '$CI_SELFTEST == "tag-path" && ($CI_PIPELINE_SOURCE == "api" || $CI_PIPELINE_SOURCE == "web")'
+  script:
+    - 'if [ -n "$CI_SERVER_TLS_CA_FILE" ]; then export GIT_SSL_CAINFO="$CI_SERVER_TLS_CA_FILE"; else echo "CI_SERVER_TLS_CA_FILE is not set: git will use the image trust store"; fi'
+    - export GIT_CI_PUSH_URL="https://gitlab-ci-token:${CI_JOB_TOKEN}@${CI_SERVER_HOST}/${CI_PROJECT_PATH}.git"
+    - node scripts/git-ci/cli.ts selftest --sha "$CI_COMMIT_SHA" --pipeline-iid "$CI_PIPELINE_IID"
+
+# Stand-ins for the suite in an on-purpose selftest pipeline: they fire the REAL ci-tag-red / ci-tag-green jobs through their real rules.
+selftest-fail:
+  stage: test
+  tags:
+    - scope
+  rules:
+    - if: '$CI_SELFTEST == "red" && ($CI_PIPELINE_SOURCE == "api" || $CI_PIPELINE_SOURCE == "web")'
+  script:
+    - echo "simulated red suite"; exit 1
+
+selftest-pass:
+  stage: test
+  tags:
+    - scope
+  rules:
+    - if: '$CI_SELFTEST == "green" && ($CI_PIPELINE_SOURCE == "api" || $CI_PIPELINE_SOURCE == "web")'
+  script:
+    - echo "simulated green suite"
+
+# Long enough to be canceled by run_ci_selftest. A cancellation must trigger NEITHER tag job.
+selftest-slow:
+  stage: test
+  tags:
+    - scope
+  rules:
+    - if: '$CI_SELFTEST == "canceled" && ($CI_PIPELINE_SOURCE == "api" || $CI_PIPELINE_SOURCE == "web")'
+  script:
+    - sleep 300

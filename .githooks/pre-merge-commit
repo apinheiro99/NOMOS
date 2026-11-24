@@ -1,0 +1,8 @@
+#!/bin/sh
+# Versioned hook: no logic here. Everything lives in scripts/git-ci/ (see docs/ci-publish-feedback.md).
+# To reuse in another project, change CLI only.
+CLI=scripts/git-ci/cli.ts
+root=$(git rev-parse --show-toplevel 2>/dev/null) || exit 0
+command -v node >/dev/null 2>&1 || { echo "git-ci: node not found, hook skipped" >&2; exit 0; }
+[ -f "$root/$CLI" ] || { echo "git-ci: $CLI missing, hook skipped" >&2; exit 0; }
+exec node "$root/$CLI" pre-merge-commit "$@"

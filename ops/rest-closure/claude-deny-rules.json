@@ -1,0 +1,19 @@
+{
+  "_comment": "Merge into the Claude Code permissions (user or project settings) at activation. Pattern-level friction: it removes the shared Taiga credentials and the Taiga API from the agent's tool surface; the sanctioned REST path is scripts/taiga-rest.ts, which reads the credentials itself and only allows non-governed writes. Hard isolation needs a separate OS user (see README.md).",
+  "permissions": {
+    "deny": [
+      "Read(//home/dev/.config/taiga-mcp/**)",
+      "Edit(//home/dev/.config/taiga-mcp/**)",
+      "Read(//proc/**)",
+      "Bash(*.config/taiga-mcp*)",
+      "Bash(*taiga-mcp/env*)",
+      "Bash(*192.168.1.95:9000*)",
+      "Bash(*/api/v1/auth*)",
+      "Bash(*TAIGA_PASSWORD*)",
+      "Bash(*TAIGA_USERNAME*)",
+      "Bash(*/proc/*environ*)",
+      "Bash(*printenv*TAIGA*)",
+      "Bash(*ps *eww*)"
+    ]
+  }
+}

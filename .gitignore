@@ -1,0 +1,9 @@
+node_modules/
+dist/
+.env
+
+# knowledge-base/ is its own independent git repository (Taiga MCP operating rules).
+knowledge-base/
+
+# Durable workflow continuations (runtime state shared by the MCP processes).
+continuations.jsonl
