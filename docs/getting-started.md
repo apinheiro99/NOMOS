@@ -2,129 +2,58 @@
 
 ## Prerequisites
 
-- A running [Taiga](https://taiga.io) instance (self-hosted or cloud)
-- A Taiga user account with API access
-- An MCP-compatible client: VS Code with GitHub Copilot, Claude Desktop, or any MCP client
+- A running [Taiga](https://taiga.io) instance and one Taiga account per actor (`po`, `claude`, `gpt`)
+- Node.js 24+ and [pnpm](https://pnpm.io)
+- An MCP-compatible client (Claude Code, ChatGPT through a tunnel, Claude Desktop, ...)
 
-## Installation
-
-### Option 1: npx (recommended)
-
-No installation required. Add the server to your MCP client configuration:
-
-**VS Code / GitHub Copilot** — add to `.vscode/mcp.json` or user `mcp.json`:
-
-```json
-{
-  "mcpServers": {
-    "taiga": {
-      "command": "npx",
-      "args": ["-y", "taiga-mcp"],
-      "env": {
-        "TAIGA_URL": "https://taiga.example.com",
-        "TAIGA_USERNAME": "your-user",
-        "TAIGA_PASSWORD": "your-pass"
-      }
-    }
-  }
-}
-```
-
-**Claude Desktop** — add to `claude_desktop_config.json`:
-
-```json
-{
-  "mcpServers": {
-    "taiga": {
-      "command": "npx",
-      "args": ["-y", "taiga-mcp"],
-      "env": {
-        "TAIGA_URL": "https://taiga.example.com",
-        "TAIGA_USERNAME": "your-user",
-        "TAIGA_PASSWORD": "your-pass"
-      }
-    }
-  }
-}
-```
-
-### Option 2: Docker
+## Install from source
 
 ```bash
-git clone <your-repository-url>
+git clone <your-repository-url> taiga-mcp
 cd taiga-mcp
-cp .env.example .env
-# Edit .env with your credentials
+pnpm install --frozen-lockfile
+pnpm run build
+cp .env.example .env     # fill in your own values; never commit .env
+```
+
+## Register in an MCP client
+
+One server entry per actor. The actor is fixed by the process environment, never by the model.
+
+```json
+{
+  "mcpServers": {
+    "taiga": {
+      "command": "node",
+      "args": ["/absolute/path/to/taiga-mcp/dist/index.js"],
+      "env": {
+        "TAIGA_URL": "https://taiga.example.com",
+        "TAIGA_USERNAME": "your-user",
+        "TAIGA_PASSWORD": "your-password",
+        "TAIGA_MCP_ACTOR": "claude"
+      }
+    }
+  }
+}
+```
+
+## Docker
+
+```bash
+cp .env.example .env     # edit with your own values
 docker compose up --build
 ```
 
-### Option 3: Local development
+## Environment variables
 
-```bash
-git clone <your-repository-url>
-cd taiga-mcp
-pnpm install
-pnpm run dev
-```
+See [`.env.example`](../.env.example) for the complete, commented list (Taiga URL, one account per actor, expected-account bindings and the merge-authorization signing key).
 
-## Environment Variables
+## Verify
 
-| Variable         | Required | Description                                                |
-| ---------------- | -------- | ---------------------------------------------------------- |
-| `TAIGA_URL`      | Yes      | Taiga instance base URL (e.g. `https://taiga.example.com`) |
-| `TAIGA_USERNAME` | Yes      | Your Taiga username                                        |
-| `TAIGA_PASSWORD` | Yes      | Your Taiga password                                        |
+Ask your agent to list your Taiga projects. It should call `taiga_projects_list`. If it fails, check that `TAIGA_URL` is reachable and that the credentials are valid.
 
-## Verify It Works
+## Next
 
-Once configured, test the connection by asking your AI agent:
-
-```
-List my Taiga projects
-```
-
-The agent should call `taiga_projects_list` and return your projects. If you see an error, check:
-
-1. The `TAIGA_URL` is correct and reachable
-2. The credentials are valid
-3. The MCP server is properly configured in your client
-
-## First Steps
-
-### 1. Find your project
-
-Every operation in Taiga needs a **project ID**. You can find it by slug:
-
-```
-What's the ID for my project "my-project-slug"?
-```
-
-The agent uses `taiga_resolver_project` to convert the slug to a numeric ID.
-
-### 2. Explore the project
-
-```
-Show me the stats for project my-project-slug
-```
-
-### 3. Try an agent
-
-Invoke a specialized agent for focused work:
-
-```
-@Taiga User Stories Create a user story "As a user, I want to log in with SSO" in project my-project-slug
-```
-
-```
-@Taiga Issues Create a critical bug "Login page crashes on Safari" in project my-project-slug
-```
-
-```
-@Taiga Reporter Generate a sprint burndown report for project my-project-slug
-```
-
-## Next Steps
-
-- [Agent Architecture](agent-architecture.md) — understand how agents delegate work
-- [Usage Examples](examples.md) — detailed examples for every domain
-- [Advanced Workflows](advanced-workflows.md) — multi-step, cross-domain recipes
+- [Operations reference](reference/operations.md)
+- [Workflow transition matrix](workflow/transition-matrix.md)
+- [Policy engine design](policy-engine/README.md)
