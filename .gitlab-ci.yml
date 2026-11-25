@@ -88,6 +88,12 @@ default:
     - npm run build
     - 'node scripts/ci-gate.ts "Tests: Core" node scripts/run-tests.ts core'
 
+# Needs the masked CI variable DATABASE_URL (a PostgreSQL server the runner can reach); each test file creates and drops its own taiga_test_ database.
+"Tests: Policy DB":
+  extends: .tests
+  script:
+    - 'node scripts/ci-gate.ts "Tests: Policy DB" node scripts/run-tests.ts db'
+
 "Package Check":
   extends:
     - .branch-push-only
@@ -152,6 +158,7 @@ ci-tag-red:
     - "Tests: Workflow"
     - "Tests: Tools"
     - "Tests: Core"
+    - "Tests: Policy DB"
     - "Package Check"
     - "Release Check"
   script:

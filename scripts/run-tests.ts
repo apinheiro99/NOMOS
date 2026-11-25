@@ -1,6 +1,6 @@
 // Runs one named group of the test suite. Groups are by area; "core" is everything the other groups do not claim,
 // so a new test file is always run by exactly one CI job.
-//   node scripts/run-tests.ts <workflow|tools|core>
+//   node scripts/run-tests.ts <workflow|tools|db|core>
 import { spawnSync } from "node:child_process";
 import { readdirSync } from "node:fs";
 import process from "node:process";
@@ -12,9 +12,11 @@ const GROUPS: Record<string, RegExp> = {
   tools: /^(.*-order|move-by-intent|delete-moveto|epic-link|epic-update-stale-version|issue-move-to-backlog|issue-promote|userstory-move-to-backlog|userstory-tasks|task-create-milestone|task-update-milestone|comment)\.test\.ts$/,
 };
 
+GROUPS.db = /-db\.test\.ts$/; // the policy database tests: they need a PostgreSQL server (DATABASE_URL), so they run as their own job
+
 const group = process.argv[2] ?? "";
 if (group !== "core" && !(group in GROUPS)) {
-  console.error("usage: run-tests.ts <workflow|tools|core>");
+  console.error("usage: run-tests.ts <workflow|tools|db|core>");
   process.exit(2);
 }
 const claimed = (file: string) => Object.values(GROUPS).some((re) => re.test(file));
