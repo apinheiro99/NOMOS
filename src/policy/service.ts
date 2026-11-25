@@ -7,6 +7,7 @@ import { evaluate } from "./evaluator.js";
 import { withProjectLock, withTransaction } from "./repository.js";
 import type { Decision, Facts, Policy } from "./types.js";
 import { validatePolicy } from "./validator.js";
+import { pendingContinuations } from "../workflow/continuation.js";
 import type { Violation } from "./validator.js";
 
 // The use cases of the policy engine, shared by the MCP and the admin API. Every change takes the project lock first.
@@ -94,6 +95,20 @@ export const rollback = (pool: pg.Pool, projectId: string, by: ActorRole, toRevi
     return created;
   }));
 
+// A policy change must not land on top of work that was decided under the old policy and is not finished: a journal entry still at `intent`
+// (its outcome unknown), a merge authorization still owed, or a continuation still pending. The evidence is listed; nothing is guessed or cleared.
+async function requireNoPendingWork(c: pg.PoolClient, projectId: string): Promise<void> {
+  const { rows } = await c.query<{ taiga_project_id: string; journal: string; merges: string }>(
+    `SELECT b.taiga_project_id,
+            (SELECT count(*) FROM mutation_journal WHERE project_id = b.id AND phase = 'intent') AS journal,
+            (SELECT count(*) FROM merge_obligation WHERE project_id = b.id AND state = 'pending') AS merges
+       FROM project_binding b WHERE b.id = $1`, [projectId]);
+  const row = rows[0];
+  const continuations = (["gpt", "claude"] as const).flatMap((party) => pendingContinuations(party, Number(row.taiga_project_id))).length;
+  const pending = { journal_intents: Number(row.journal), merge_obligations: Number(row.merges), continuations };
+  if (Object.values(pending).some((n) => n > 0)) throw new PolicyError(409, "pending_work", `the project has unfinished work from the current policy: ${JSON.stringify(pending)}`);
+}
+
 // Approves and activates in ONE transaction. The caller states the revision it saw and the exact hash it reviewed.
 export const approve = (pool: pg.Pool, projectId: string, by: ActorRole, a: { policyId: string; expectedRevision: number | null; hash: string; reason: string }) =>
   withProjectLock(pool, projectId, (c) => withTransaction(c, async () => {
@@ -107,6 +122,10 @@ export const approve = (pool: pg.Pool, projectId: string, by: ActorRole, a: { po
       throw new PolicyError(409, "stale", `the active revision is ${current?.revision ?? "none"}, the proposal was made on another one`);
     }
     requireValid(version.payload);
+    if ((await c.query("SELECT 1 FROM policy_review WHERE project_id = $1 AND policy_id = $2 AND decision = 'rejected'", [projectId, a.policyId])).rowCount) {
+      throw new PolicyError(409, "rejected", "this proposal was rejected: make a new proposal instead");
+    }
+    await requireNoPendingWork(c, projectId);
     const reviewId = uuidv7();
     const activationId = uuidv7();
     await c.query("INSERT INTO policy_review (id, project_id, policy_id, decision, actor, reason) VALUES ($1,$2,$3,'approved',$4,$5)", [reviewId, projectId, a.policyId, by, a.reason]);

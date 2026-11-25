@@ -4,6 +4,7 @@ import { mirrorProjects } from "../policy/mirror.js";
 import { getProject, getVersion, listAudit, listProjects, listVersions, schemaVersion } from "../policy/queries.js";
 import { approve, PolicyError, propose, reject, rollback, simulate } from "../policy/service.js";
 import type { Policy } from "../policy/types.js";
+import { norm } from "../workflow/policy.js";
 import { approveBody, pageQuery, proposalsQuery, reconcileBody, proposeBody, rejectBody, rollbackBody, simulateBody, uuid } from "./schemas.js";
 
 export interface ApiRequest { method: string; path: string; query: URLSearchParams; body: unknown }
@@ -34,13 +35,28 @@ route("GET", "/projects/:id/proposals", async (db, p, r) => {
 route("GET", "/projects/:id/audit", async (db, p, r) => ok({ items: await listAudit(db, projectId(p), pageQuery.parse(Object.fromEntries(r.query))) }));
 route("POST", "/projects/:id/simulate", async (db, p, r) => ok(await simulate(db, projectId(p), simulateBody.parse(r.body))));
 route("POST", "/projects/:id/proposals", async (db, p, r) => ok(await propose(db, projectId(p), PO, proposeBody.parse(r.body).policy as Policy), 201));
-route("POST", "/projects/:id/proposals/:revision/approve", async (db, p, r) => ok(await approve(db, projectId(p), PO, { policyId: await policyIdOf(db, p), ...approveBody.parse(r.body) })));
+route("POST", "/projects/:id/proposals/:revision/approve", async (db, p, r, mirror) => {
+  const policyId = await policyIdOf(db, p);
+  if (mirror) await requireTasksInKnownStates(db, mirror.client, projectId(p), policyId);
+  return ok(await approve(db, projectId(p), PO, { policyId, ...approveBody.parse(r.body) }));
+});
 route("POST", "/projects/:id/proposals/:revision/reject", async (db, p, r) => ok(await reject(db, projectId(p), PO, { policyId: await policyIdOf(db, p), ...rejectBody.parse(r.body) })));
 route("POST", "/reconcile", async (db, _p, r, mirror) => {
   if (!mirror) throw new PolicyError(503, "mirror_unavailable", "this process has no Taiga session to mirror from");
   return ok(await mirrorProjects(db, mirror.client, mirror.baseUrl, { apply: reconcileBody.parse(r.body ?? {}).apply }));
 });
 route("POST", "/projects/:id/rollback", async (db, p, r) => ok(await rollback(db, projectId(p), PO, rollbackBody.parse(r.body).toRevision), 201));
+
+// An open Task sitting in a status the new policy does not know would be orphaned by the change: the approval is refused and the cards are listed.
+async function requireTasksInKnownStates(db: pg.Pool, client: TaigaClient, project: string, policyId: string): Promise<void> {
+  const { rows } = await db.query<{ taiga_project_id: string; payload: Policy }>(
+    "SELECT b.taiga_project_id, v.payload FROM project_binding b JOIN policy_version v ON v.project_id = b.id WHERE b.id = $1 AND v.id = $2", [project, policyId]);
+  if (!rows[0]) throw notFound("proposal");
+  const known = new Set(Object.keys(rows[0].payload.entities.task.states));
+  const open = (await client.get("/tasks", { project: Number(rows[0].taiga_project_id), status__is_closed: false })) as { ref: number; status_extra_info?: { name?: string } }[];
+  const orphaned = open.filter((t) => !known.has(norm(t.status_extra_info?.name ?? "")));
+  if (orphaned.length) throw new PolicyError(409, "tasks_in_unknown_state", `${orphaned.length} open Task(s) sit in a status this policy does not have: ${orphaned.map((t) => `#${t.ref}`).join(", ")}`);
+}
 
 // A proposal is addressed by its revision number in the URL, as the History screen shows it.
 async function policyIdOf(db: pg.Pool, p: string[]): Promise<string> {

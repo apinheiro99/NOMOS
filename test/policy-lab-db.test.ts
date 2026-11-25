@@ -58,6 +58,7 @@ before(async () => {
   binding = randomUUID();
   await pool.query("INSERT INTO taiga_instance (id, instance_key, base_url) VALUES ($1,'lab',$2)", [instance, BASE]);
   await pool.query("INSERT INTO project_binding (id, instance_id, taiga_project_id, slug, name, lifecycle) VALUES ($1,$2,49,'lab','Lab','managed')", [binding, instance]);
+  await pool.query("INSERT INTO project_binding (id, instance_id, taiga_project_id, slug, name, lifecycle) VALUES ($1,$2,50,'old','Old','legacy')", [randomUUID(), instance]);
 });
 after(async () => {
   await pool.end();
@@ -169,6 +170,14 @@ test("a project the engine does not manage keeps the legacy rules", async () => 
   const bp = comments.find((c) => c.comment.includes("Implementation Blueprint"))!.id;
   assert.equal(payload(await move("claude", T.val, handoff(bp))).transitioned, true);
   assert.equal((await journal()).length, before, "nothing was journaled for the unmanaged project");
+});
+
+test("a project with no binding at all is refused, never treated as legacy", async () => {
+  task.project = 51;
+  const r = await move("gpt", T.prog, blueprint());
+  assert.equal(payload(r).code, "WORKFLOW_POLICY_UNAVAILABLE");
+  assert.match(JSON.stringify(payload(r)), /no binding/);
+  assert.deepEqual(writes, []);
 });
 
 test("a database that is down refuses the transition with zero writes", async () => {

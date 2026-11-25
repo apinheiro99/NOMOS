@@ -22,7 +22,10 @@ async function main() {
     const clients = actors.tokens.size ? loadActorClients(actors) : undefined;
     if (clients) await verifyActorAccounts(clients);
     // The policy database turns the policy engine on: the MCP decides managed projects by their active policy, and the private admin
-    // API (same process, own port) proposes and approves it. Without DATABASE_URL there is no policy engine and the legacy rules apply.
+    // API (same process, own port) proposes and approves it. A resident without DATABASE_URL does not start, unless the operator turns the engine
+    // off on purpose with TAIGA_MCP_POLICY_ENGINE=off (then only the legacy rules apply, and the log says so).
+    if (!process.env.DATABASE_URL && process.env.TAIGA_MCP_POLICY_ENGINE !== "off") throw new Error("DATABASE_URL is not set: the policy engine needs its database (set TAIGA_MCP_POLICY_ENGINE=off to run on the legacy rules on purpose)");
+    if (!process.env.DATABASE_URL) console.error("policy engine is OFF (TAIGA_MCP_POLICY_ENGINE=off): legacy rules only");
     const pool = process.env.DATABASE_URL ? createPool(process.env.DATABASE_URL) : undefined;
     const runtime = pool ? createPolicyRuntime(pool, instanceBaseUrl()) : undefined;
     // A Done approved before a crash still owes its merge authorization: settle every stored obligation before serving.

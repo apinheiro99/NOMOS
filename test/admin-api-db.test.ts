@@ -31,7 +31,7 @@ before(async () => {
   const instance = randomUUID();
   await pool.query("INSERT INTO taiga_instance (id, instance_key, base_url) VALUES ($1,'lab','http://t')", [instance]);
   await pool.query("INSERT INTO project_binding (id, instance_id, taiga_project_id, slug, name, lifecycle) VALUES ($1,$2,7,'lab','Lab','managed')", [project, instance]);
-  server = await startAdminServer({ host: "127.0.0.1", port: 0, allowedOrigins: [] }, pool, loadActorConfig(TOKENS));
+  server = await startAdminServer({ host: "127.0.0.1", port: 0, allowedOrigins: [], allowedHosts: [] }, pool, loadActorConfig(TOKENS));
   base = `http://127.0.0.1:${(server.address() as { port: number }).port}/admin/api/v1`;
 });
 after(async () => {
@@ -104,7 +104,7 @@ test("a rollback proposes a copy and a database that is down answers 503", async
   const back = await call("POST", `/projects/${project}/rollback`, { toRevision: 1 });
   assert.equal(back.status, 201);
   const dead = createPool("postgresql://x:y@127.0.0.1:1/none", 1);
-  const s = await startAdminServer({ host: "127.0.0.1", port: 0, allowedOrigins: [] }, dead, loadActorConfig(TOKENS));
+  const s = await startAdminServer({ host: "127.0.0.1", port: 0, allowedOrigins: [], allowedHosts: [] }, dead, loadActorConfig(TOKENS));
   const res = await fetch(`http://127.0.0.1:${(s.address() as { port: number }).port}/admin/api/v1/projects`, { headers: PO });
   assert.equal(res.status, 503);
   s.close();
@@ -118,12 +118,12 @@ test("foreign Origin or Host is refused and the admin bind stays on loopback", a
 });
 
 test("the admin API cannot start without a PO token", () => {
-  assert.throws(() => startAdminServer({ host: "127.0.0.1", port: 0, allowedOrigins: [] }, pool, loadActorConfig({ TAIGA_MCP_GPT_TOKEN: TOKENS.TAIGA_MCP_GPT_TOKEN })), /TAIGA_MCP_PO_TOKEN/);
+  assert.throws(() => startAdminServer({ host: "127.0.0.1", port: 0, allowedOrigins: [], allowedHosts: [] }, pool, loadActorConfig({ TAIGA_MCP_GPT_TOKEN: TOKENS.TAIGA_MCP_GPT_TOKEN })), /TAIGA_MCP_PO_TOKEN/);
 });
 
 test("the DEV reload stream exists only when it is switched on, needs no token, and carries only an id", async () => {
   assert.equal((await fetch(base.replace("/v1", "/dev-reload"))).status, 404);
-  const dev = await startAdminServer({ host: "127.0.0.1", port: 0, allowedOrigins: [] }, pool, loadActorConfig(TOKENS), { devReload: createDevReload() });
+  const dev = await startAdminServer({ host: "127.0.0.1", port: 0, allowedOrigins: [], allowedHosts: [] }, pool, loadActorConfig(TOKENS), { devReload: createDevReload() });
   const res = await fetch(`http://127.0.0.1:${(dev.address() as { port: number }).port}/admin/api/dev-reload`);
   assert.equal(res.headers.get("content-type"), "text/event-stream");
   const reader = res.body!.getReader();
@@ -159,7 +159,7 @@ test("POST /reconcile is a dry run unless apply is true, and says so when there 
     getAll: async () => [{ id: 501, slug: "m", name: "Mirrored" }],
     get: async (path: string) => (path === "/task-statuses" ? statuses : path.endsWith("custom-attributes") ? [{ id: 1, name: "UUID" }] : []),
   } as never;
-  const s = await startAdminServer({ host: "127.0.0.1", port: 0, allowedOrigins: [] }, pool, loadActorConfig(TOKENS), { mirror: { client: fake, baseUrl: "http://t" } });
+  const s = await startAdminServer({ host: "127.0.0.1", port: 0, allowedOrigins: [], allowedHosts: [] }, pool, loadActorConfig(TOKENS), { mirror: { client: fake, baseUrl: "http://t" } });
   const url = `http://127.0.0.1:${(s.address() as { port: number }).port}/admin/api/v1/reconcile`;
   const post = async (body: object) => (await fetch(url, { method: "POST", headers: { ...PO, "content-type": "application/json" }, body: JSON.stringify(body) })).json() as Promise<{ applied: boolean; items: { taigaProjectId: number; action: string }[] }>;
   const dry = await post({});

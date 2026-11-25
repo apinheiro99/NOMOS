@@ -46,7 +46,18 @@ export function isHostAllowed(hostHeader: string | undefined): boolean {
   }
 }
 
-export interface AdminConfig { host: string; port: number; allowedOrigins: string[] }
+// The Host header of an admin request must be a loopback name on a loopback bind, or one of the configured host names (DNS-rebinding guard).
+export function isAdminHostAllowed(hostHeader: string | undefined, bindHost: string, allowedHosts: string[]): boolean {
+  if (!hostHeader) return false;
+  try {
+    const name = new URL(`http://${hostHeader}`).hostname.replace(/^\[|\]$/g, "").toLowerCase();
+    return allowedHosts.includes(name) || (isLoopback(bindHost) && isLoopback(name));
+  } catch {
+    return false;
+  }
+}
+
+export interface AdminConfig { host: string; port: number; allowedOrigins: string[]; allowedHosts: string[] }
 
 // The admin listener is private: loopback unless the operator opts in, never on the tunnel's port.
 export function parseAdminConfig(env: NodeJS.ProcessEnv = process.env): AdminConfig {
@@ -58,5 +69,7 @@ export function parseAdminConfig(env: NodeJS.ProcessEnv = process.env): AdminCon
   const port = Number(rawPort);
   if (!/^\d+$/.test(rawPort) || port > 65535) throw new Error(`Invalid TAIGA_MCP_ADMIN_PORT "${rawPort}"`);
   const allowedOrigins = (env.TAIGA_MCP_ADMIN_ALLOWED_ORIGINS ?? "").split(",").map((o) => o.trim()).filter(Boolean);
-  return { host, port, allowedOrigins };
+  const allowedHosts = (env.TAIGA_MCP_ADMIN_ALLOWED_HOSTS ?? "").split(",").map((h) => h.trim().toLowerCase()).filter(Boolean);
+  if (!isLoopback(host) && !allowedHosts.length) throw new Error("A non-loopback admin bind needs TAIGA_MCP_ADMIN_ALLOWED_HOSTS: the host names the PO's browser uses");
+  return { host, port, allowedOrigins, allowedHosts };
 }
