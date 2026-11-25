@@ -41,3 +41,26 @@ test("public surface: private addresses, secrets and key blocks are flagged; pla
   assert.deepEqual(categories("-----BEGIN PRIVATE" + " KEY-----"), ["private-key-block"]);
   assert.deepEqual(categories("TAIGA_URL=https://taiga.example.com\nTAIGA_PASSWORD=<your-password>"), []);
 });
+
+// F0 audit #3: real git repositories, no mocks. The "GitLab" and "GitHub" remotes are local bare repos.
+test("publish: an older pipeline can never overwrite a newer publication", async () => {
+  const { publish } = await import("../../scripts/git-ci/publish-github.ts");
+  const { execFileSync } = await import("node:child_process");
+  const { writeFileSync, mkdirSync } = await import("node:fs");
+  const root = mkdtempSync(path.join(tmpdir(), "taiga-publish-"));
+  const run = (cwd: string, ...args: string[]) => execFileSync("git", args, { cwd, encoding: "utf8", env: { ...process.env, GIT_AUTHOR_NAME: "t", GIT_AUTHOR_EMAIL: "t@t", GIT_COMMITTER_NAME: "t", GIT_COMMITTER_EMAIL: "t@t" } }).trim();
+  const [gitlab, github, work, priv] = ["gitlab.git", "github.git", "work", "private"].map((n) => path.join(root, n));
+  run(root, "init", "-q", "--bare", gitlab); run(root, "init", "-q", "--bare", github); run(root, "init", "-q", "-b", "main", work);
+  run(work, "remote", "add", "origin", gitlab);
+  const commit = (n: string) => { writeFileSync(path.join(work, "f"), n); run(work, "add", "."); run(work, "commit", "-q", "-m", n); return run(work, "rev-parse", "HEAD"); };
+  const [older, newer] = [commit("one"), commit("two")];
+  run(work, "tag", "v2026.11.000001", older); run(work, "tag", "v2026.11.000002", newer); run(work, "push", "-q", "origin", "main", "--tags");
+  mkdirSync(path.join(priv, "credentials", "github"), { recursive: true }); mkdirSync(path.join(priv, "config"), { recursive: true });
+  writeFileSync(path.join(priv, "credentials", "github", "taiga-mcp"), "unused");
+  writeFileSync(path.join(priv, "config", "github.env"), `TAIGA_GITHUB_OWNER=x\nTAIGA_GITHUB_REPOSITORY=${github}\n`);
+  const git = (args: string[], env?: NodeJS.ProcessEnv) => execFileSync("git", args, { cwd: work, encoding: "utf8", env: { ...process.env, ...env } }).trim();
+  const env = (sha: string, iid: string) => ({ CI_COMMIT_SHA: sha, CI_PIPELINE_IID: iid, CI_PIPELINE_CREATED_AT: "2026-11-25T00:00:00Z", TAIGA_PRIVATE_PATH: priv });
+  assert.deepEqual(publish(env(newer, "2"), git), { tag: "v2026.11.000002" });
+  assert.throws(() => publish(env(older, "1"), git), /git push/);
+  assert.equal(run(github, "rev-parse", "refs/heads/main"), newer);
+});
