@@ -7,7 +7,7 @@ import process from "node:process";
 
 const GROUPS: Record<string, RegExp> = {
   // the governed workflow: policy, actors, governance, merge authorization, closed REST path
-  workflow: /^(workflow|governance|governance-cli|assignment|initial-assignment|account-binding|identity|merge-auth|start-rules|write-boundary|engineering-review|project-profile|project-module-flags|milestone-close-notification|git-ci|rest-closure|auth-keygen|policy-oracle|policy-parity)\.test\.ts$/,
+  workflow: /^(workflow|governance|governance-cli|assignment|initial-assignment|account-binding|identity|merge-auth|start-rules|write-boundary|engineering-review|project-profile|project-module-flags|milestone-close-notification|git-ci|rest-closure|auth-keygen|policy-oracle|policy-parity|policy-validator)\.test\.ts$/,
   // the Taiga API tools: ordering, moves, links, promotion, comments
   tools: /^(.*-order|move-by-intent|delete-moveto|epic-link|epic-update-stale-version|issue-move-to-backlog|issue-promote|userstory-move-to-backlog|userstory-tasks|task-create-milestone|task-update-milestone|comment)\.test\.ts$/,
 };
