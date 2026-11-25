@@ -30,7 +30,7 @@ export interface PolicyRuntime {
   finish(journalId: string, phase: "applied" | "completed" | "failed", result: object): Promise<void>;
   completeEffect(journalId: string): Promise<void>;
   /** Creates a project through the provisioning intent: idempotent by request key, bound (and its first policy stored) before it is reported. */
-  provision(a: { principal: string; requestKey: string; requestHash: string }, create: Parameters<typeof provisionProject>[3]): ReturnType<typeof provisionProject>;
+  provision(a: { principal: string; requestKey: string; requestHash: string }, create: Parameters<typeof provisionProject>[3], prepare: Parameters<typeof provisionProject>[4]): ReturnType<typeof provisionProject>;
   openMergeObligation(m: ManagedPolicy, o: MergeObligation): Promise<void>;
   settleMergeObligation(authorizationId: string, outcome: Settlement): Promise<void>;
   /** The policy that was in force when the governed operation that wrote this artifact comment was authorized (via the mutation journal). `"legacy"` is a PROVEN legacy
@@ -71,7 +71,7 @@ export function createPolicyRuntime(pool: pg.Pool, baseUrl: string): PolicyRunti
       if (!row.activation_id || !row.payload) throw new Error(`project ${taigaProjectId} is managed but has no active policy`);
       return { projectId: row.project_id, activationId: row.activation_id, revision: Number(row.revision), policy: row.payload };
     },
-    provision: (a, create) => provisionProject(pool, baseUrl, a, create),
+    provision: (a, create, prepare) => provisionProject(pool, baseUrl, a, create, prepare),
     async hold(taigaProjectId) {
       const first = await this.forProject(taigaProjectId); // names the project (and refuses an unsafe one); its policy is read again under the lock
       if (!first) return null;

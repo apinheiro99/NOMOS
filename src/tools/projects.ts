@@ -53,30 +53,39 @@ export function registerProjectTools(server: McpServer, client: TaigaClient, ide
     async ({ apply_profile, request_key, ...params }) => {
       // The SCOPE profile projects are born with every module on (Epics, Kanban, Wiki, Contact); an explicit flag still wins.
       const modules = apply_profile === false ? {} : { is_epics_activated: true, is_kanban_activated: true, is_wiki_activated: true, is_contact_activated: true };
-      const make = async () => {
-        const data = (await client.post("/projects", { ...modules, ...params })) as { id?: number; slug?: string; name?: string };
-        if (apply_profile === false || typeof data?.id !== "number") return { data, prepared: undefined };
-        // The project exists either way: a profile failure is reported, never thrown, and repaired by taiga_project_apply_profile.
-        try { return { data, prepared: await prepareProject(client, data.id, { dryRun: false }) as unknown }; }
-        catch (e) { return { data, prepared: { error: e instanceof Error ? e.message : String(e), note: "Project WAS created; run taiga_project_apply_profile (dry_run=false) to finish." } as unknown }; }
+      const create = async () => (await client.post("/projects", { ...modules, ...params })) as { id?: number };
+      // The project exists either way: a profile failure is reported, never thrown, and repaired by taiga_project_apply_profile.
+      const prepare = async (id: number): Promise<unknown> => {
+        if (apply_profile === false) return undefined;
+        try { return await prepareProject(client, id, { dryRun: false }); }
+        catch (e) { return { error: e instanceof Error ? e.message : String(e), note: "Project WAS created; run taiga_project_apply_profile (dry_run=false) to finish." }; }
       };
       const text = (body: unknown) => ({ content: [{ type: "text" as const, text: JSON.stringify(body) }] });
       if (runtime) {
         // A project born under the policy engine is bound (and gets its first policy) before it is reported; the intent is recorded first.
         // Without a stable key a retry could not be told from a new request, so the key is required (Geewax: request deduplication).
         if (!request_key) throw new Error("request_key is required when the policy engine is on: reuse the same key to retry this exact request");
-        let made: Awaited<ReturnType<typeof make>> | undefined;
+        let profile: unknown;
+        let body: object | undefined;
         const out = await runtime.provision(
           { principal: identity.actor?.role ?? "unauthenticated", requestKey: request_key, requestHash: policyHash({ apply_profile, ...params } as never) },
           async () => {
-            made = await make();
-            const row = made.data as { id: number; slug: string; name: string };
-            return { id: row.id, slug: row.slug, name: row.name, seen: await inspect(client, row) };
+            const row = await create();
+            body = row;
+            if (typeof row?.id !== "number") throw new Error("Taiga did not return the id of the created project");
+            return { id: row.id };
+          },
+          // Runs after the id is registered; a failure here leaves the project registered and resumable with the same request key.
+          async (id) => {
+            profile = await prepare(id);
+            const row = (await client.get(`/projects/${id}`)) as { id: number; slug: string; name: string };
+            return { slug: row.slug, name: row.name, seen: await inspect(client, row) };
           },
         );
-        return text(made ? { ...made.data, ...(made.prepared ? { profile_result: made.prepared } : {}), provisioned: true } : { id: out.id, replay: out.replay, provisioned: true });
+        return text({ ...(body ?? {}), id: out.id, replay: out.replay, provisioned: true, ...(profile ? { profile_result: profile } : {}) });
       }
-      const { data, prepared } = await make();
+      const data = await create();
+      const prepared = typeof data?.id === "number" ? await prepare(data.id) : undefined;
       return text(prepared ? { ...data, profile_result: prepared } : data);
     },
   );
