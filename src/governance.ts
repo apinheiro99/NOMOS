@@ -220,7 +220,8 @@ export function addGovernance(server: McpServer, client: TaigaClient, state: Gov
     if (!runtime) return bound(name, description, schema, handler);
     assertCataloged(name);
     return bound(name, description, schema, async (args, extra) => {
-      const refusal = state.enabled ? await enforce(name, args as Record<string, unknown>, client, runtime) : null;
+      // Not tied to the governance switch: turning governance off frees legacy projects, never a project the policy engine manages.
+      const refusal = await enforce(name, args as Record<string, unknown>, client, runtime, identity.actor?.role ?? null);
       return refusal ? violation([refusal]) : handler(args, extra);
     });
   };
@@ -321,7 +322,7 @@ export function registerGovernanceTools(server: McpServer, client: TaigaClient, 
       const hasComment = rawComment !== undefined && rawComment.trim() !== "";
       const comment = hasComment ? signComment(rawComment!, author) : undefined;
       const base = BASE[entity];
-      const governed = state.enabled;
+      const governed = state.enabled || await runtime?.forProject(((await client.get(`/${base}/${id}`)) as { project: number }).project).then((m) => m !== null, () => true) === true;
       const named = await resolveStatusRef(client, entity, ((await client.get(`/${base}/${id}`)) as { project?: number }).project, statusRef);
       if ("error" in named) return violation([named.error]);
       const status = named.id;

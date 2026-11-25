@@ -74,3 +74,12 @@ test("rejects a governed list that names a state the entity does not have, and a
   delete (q.entities as Partial<Policy["entities"]>).epic;
   assert.ok(codes(q).includes("missing_entity"));
 });
+
+test("an operation permission must name a cataloged write, a bound role and at least one role", () => {
+  const p = fresh();
+  p.operations["taiga_made_up"] = ["gpt"];
+  p.operations["taiga_tasks_update"] = [];
+  p.operations["taiga_tasks_create"] = ["mallory" as never];
+  const c = codes(p);
+  assert.ok(c.includes("unknown_operation") && c.includes("no_role") && c.includes("role_without_binding"));
+});

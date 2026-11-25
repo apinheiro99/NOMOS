@@ -9,9 +9,9 @@ test("a loopback bind accepts loopback Host names only; a non-loopback bind need
   assert.equal(isAdminHostAllowed("evil.example:8788", "127.0.0.1", []), false);
   assert.equal(isAdminHostAllowed(undefined, "127.0.0.1", []), false);
   assert.throws(() => parseAdminConfig({ TAIGA_MCP_ADMIN_HOST: "0.0.0.0", TAIGA_MCP_HTTP_ALLOW_NON_LOOPBACK: "1" }), /ALLOWED_HOSTS/);
-  const cfg = parseAdminConfig({ TAIGA_MCP_ADMIN_HOST: "0.0.0.0", TAIGA_MCP_HTTP_ALLOW_NON_LOOPBACK: "1", TAIGA_MCP_ADMIN_ALLOWED_HOSTS: "Policy.lab" });
-  assert.equal(isAdminHostAllowed("policy.lab:8788", cfg.host, cfg.allowedHosts), true);
-  assert.equal(isAdminHostAllowed("other.lab:8788", cfg.host, cfg.allowedHosts), false);
+  const cfg = parseAdminConfig({ TAIGA_MCP_ADMIN_HOST: "0.0.0.0", TAIGA_MCP_HTTP_ALLOW_NON_LOOPBACK: "1", TAIGA_MCP_ADMIN_ALLOWED_HOSTS: "Policy.example.com" });
+  assert.equal(isAdminHostAllowed("policy.example.com:8788", cfg.host, cfg.allowedHosts), true);
+  assert.equal(isAdminHostAllowed("other.example.com:8788", cfg.host, cfg.allowedHosts), false);
 });
 
 test("pool limits come from the environment and a malformed value stops the start", async () => {

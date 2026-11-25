@@ -35,3 +35,6 @@ export function allowedActions(policy: Policy, entity: EntityKind, role: ActorRo
   }
   return { allowed, denied };
 }
+
+// Default deny: a plain write is allowed only to a role the policy lists for that operation. An unauthenticated caller (no role) never is.
+export const permits = (policy: Policy, operation: string, role: ActorRole | null): boolean => role !== null && (policy.operations?.[operation] ?? []).includes(role);

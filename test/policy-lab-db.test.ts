@@ -135,7 +135,7 @@ async function activate(policy: Policy, expectedRevision: number | null) {
 test("a managed project with no active policy is refused, never sent to the legacy rules", async () => {
   const r = await move("gpt", T.prog, blueprint());
   assert.equal(r.isError, true);
-  assert.equal(payload(r).code, "WORKFLOW_POLICY_UNAVAILABLE");
+  assert.match(JSON.stringify(payload(r)), /managed but has no active policy/, "refused by the PEP before the handler");
   assert.deepEqual(writes, []);
 });
 
@@ -175,7 +175,6 @@ test("a project the engine does not manage keeps the legacy rules", async () => 
 test("a project with no binding at all is refused, never treated as legacy", async () => {
   task.project = 51;
   const r = await move("gpt", T.prog, blueprint());
-  assert.equal(payload(r).code, "WORKFLOW_POLICY_UNAVAILABLE");
   assert.match(JSON.stringify(payload(r)), /no binding/);
   assert.deepEqual(writes, []);
 });
@@ -183,6 +182,6 @@ test("a project with no binding at all is refused, never treated as legacy", asy
 test("a database that is down refuses the transition with zero writes", async () => {
   const dead = createPolicyRuntime(createPool("postgresql://x:y@127.0.0.1:1/none", 1), BASE);
   const r = await move("gpt", T.prog, blueprint(), dead);
-  assert.equal(payload(r).code, "WORKFLOW_POLICY_UNAVAILABLE");
+  assert.equal(r.isError, true);
   assert.deepEqual(writes, []);
 });

@@ -15,7 +15,7 @@ const entity = z.object({
 }).strict();
 
 export const policySchema = z.object({
-  schemaVersion: z.literal(1), roles: z.array(role),
+  schemaVersion: z.literal(1), roles: z.array(role), operations: z.record(z.string(), z.array(role)),
   entities: z.object({ task: entity, userstory: entity, epic: entity }).strict(),
 }).strict();
 
