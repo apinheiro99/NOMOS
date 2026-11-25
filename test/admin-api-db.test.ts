@@ -59,7 +59,7 @@ test("every route answers 401 without a token, GET included, and 403 to the agen
 
 test("responses are JSON, never cached, and errors carry a correlation id", async () => {
   const ok = await call("GET", "/health");
-  assert.deepEqual([ok.status, ok.json.status, ok.json.schema, ok.headers.get("cache-control")], [200, "ok", "0002_instance_base_url_unique.sql", "no-store"]);
+  assert.deepEqual([ok.status, ok.json.status, ok.json.schema, ok.headers.get("cache-control")], [200, "ok", "0003_merge_obligation.sql", "no-store"]);
   const bad = await call("GET", "/projects/not-a-uuid");
   assert.equal(bad.status, 422);
   assert.deepEqual(Object.keys(bad.json).sort(), ["code", "correlation_id", "message", "problems"]);
@@ -146,7 +146,7 @@ test("the health check passes against a healthy process and fails with a wrong t
   const admin = base.replace("/admin/api/v1", "");
   const good = await healthcheck({ TAIGA_MCP_ADMIN_URL: admin, TAIGA_MCP_PO_TOKEN: TOKENS.TAIGA_MCP_PO_TOKEN });
   assert.equal(good.status, 0, good.stderr);
-  assert.match(good.stdout, /healthcheck: ok \(schema 0002_instance_base_url_unique\.sql/);
+  assert.match(good.stdout, /healthcheck: ok \(schema 0003_merge_obligation\.sql/);
   assert.equal((await healthcheck({ TAIGA_MCP_ADMIN_URL: admin, TAIGA_MCP_PO_TOKEN: "x".repeat(20) })).status, 1);
   assert.equal((await healthcheck({ TAIGA_MCP_ADMIN_URL: "http://127.0.0.1:1", TAIGA_MCP_PO_TOKEN: TOKENS.TAIGA_MCP_PO_TOKEN })).status, 1);
   assert.equal((await healthcheck({ TAIGA_MCP_ADMIN_URL: admin, TAIGA_MCP_PO_TOKEN: "" })).status, 1);

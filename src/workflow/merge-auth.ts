@@ -53,9 +53,9 @@ export function mergeContextProblems(raw: unknown, kind: WorkItemIdentity["kind"
 }
 
 // `item` and `targetWorkItem` (the parent Story, the Sprint, or for a Sprint its project) are resolved from Taiga by the caller before the Done is written.
-export function signMergeAuthorization(signer: Signer, ctx: MergeContext, project: number, item: WorkItemIdentity, targetWorkItem: string): MergeEnvelope {
+export function signMergeAuthorization(signer: Signer, ctx: MergeContext, project: number, item: WorkItemIdentity, targetWorkItem: string, authorizationId: string = randomUUID()): MergeEnvelope {
   const claims: MergeClaims = {
-    issuer: "taiga-mcp", key_id: signer.keyId, action: ACTION[item.kind], authorization_id: randomUUID(), project,
+    issuer: "taiga-mcp", key_id: signer.keyId, action: ACTION[item.kind], authorization_id: authorizationId, project,
     work_item: workItemOf(item), target_work_item: targetWorkItem,
     repository: ctx.repository, source_branch: ctx.source_branch, target_branch: ctx.target_branch, source_sha: ctx.source_sha, target_sha: ctx.target_sha,
   };
