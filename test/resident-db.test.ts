@@ -43,7 +43,7 @@ test("the resident process serves /mcp and the admin API together, and the unit'
   const p = start({ DATABASE_URL: db.url, TAIGA_MCP_HTTP_PORT: String(http), TAIGA_MCP_ADMIN_PORT: String(admin), TAIGA_MCP_BUILD: "test" });
   const health = await run(["scripts/healthcheck.ts", "--wait"], { TAIGA_MCP_ADMIN_URL: `http://127.0.0.1:${admin}`, TAIGA_MCP_PO_TOKEN: TOKENS.TAIGA_MCP_PO_TOKEN });
   assert.equal(health.status, 0, p.stderr());
-  assert.match(health.stdout, /schema 0005_journal_pending_effect\.sql, build test/);
+  assert.match(health.stdout, /schema 0006_merge_obligation_no_context\.sql, build test/);
   assert.equal((await fetch(`http://127.0.0.1:${http}/mcp`, { method: "POST", headers: { "content-type": "application/json" }, body: "{}" })).status, 401, "/mcp needs an actor token");
   p.child.kill();
   await p.exited;

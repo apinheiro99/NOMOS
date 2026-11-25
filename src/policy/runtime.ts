@@ -10,11 +10,12 @@ export interface ManagedPolicy { projectId: string; activationId: string; revisi
 
 export interface MergeObligation {
   authorizationId: string; entity: "task" | "userstory"; taigaId: number; doneStatus: number; taigaProject: number;
-  context: MergeContext; workItem: WorkItemIdentity; targetWorkItem: string;
+  // No context (and so no work item or target) means a branch was declared but no merge_context was given: the obligation is stored in review, never signed.
+  context?: MergeContext; workItem?: WorkItemIdentity; targetWorkItem?: string;
   // Evidence and ownership: the exact approval comment (sha256 of its text), who approved, the journal entry, and the recipient chosen at that moment.
   journalId: string; actor: "gpt" | "claude" | "po"; recipient: "gpt" | "claude" | null; approvalHash: string;
 }
-export type PendingObligation = MergeObligation & { activationId: string; createdAt: Date; envelope?: MergeEnvelope; approvalCommentId?: string };
+export type PendingObligation = MergeObligation & { context: MergeContext; workItem: WorkItemIdentity; targetWorkItem: string; activationId: string; createdAt: Date; envelope?: MergeEnvelope; approvalCommentId?: string };
 export type Settlement = { signed: MergeEnvelope; approvalCommentId: string } | { abandoned: true } | { review: true };
 
 export interface PolicyRuntime {
@@ -113,8 +114,8 @@ export function createPolicyRuntime(pool: pg.Pool, baseUrl: string): PolicyRunti
     async openMergeObligation(m, o) {
       await pool.query(
         `INSERT INTO merge_obligation (authorization_id, project_id, activation_id, journal_id, actor, recipient, approval_hash, entity, taiga_id, done_status, taiga_project, context, work_item, target_work_item, state)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,'pending')`,
-        [o.authorizationId, m.projectId, m.activationId, o.journalId, o.actor, o.recipient, o.approvalHash, o.entity, o.taigaId, o.doneStatus, o.taigaProject, JSON.stringify(o.context), JSON.stringify(o.workItem), o.targetWorkItem],
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)`,
+        [o.authorizationId, m.projectId, m.activationId, o.journalId, o.actor, o.recipient, o.approvalHash, o.entity, o.taigaId, o.doneStatus, o.taigaProject, o.context ? JSON.stringify(o.context) : null, o.workItem ? JSON.stringify(o.workItem) : null, o.targetWorkItem ?? null, o.context ? "pending" : "review"],
       );
     },
     async settleMergeObligation(authorizationId, outcome) {

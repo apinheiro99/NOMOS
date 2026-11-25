@@ -4,7 +4,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { randomUUID } from "node:crypto";
+import { generateKeyPairSync, randomUUID } from "node:crypto";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { TaigaClient } from "../dist/client.js";
@@ -12,7 +12,9 @@ import { createTaigaMcpServer } from "../dist/server.js";
 import { migrate } from "../dist/policy/migrate.js";
 import { createPool } from "../dist/policy/repository.js";
 import { createPolicyRuntime } from "../dist/policy/runtime.js";
-import { approve, propose } from "../dist/policy/service.js";
+import { approve, propose, resolveObligation } from "../dist/policy/service.js";
+import { recoverMergeObligations } from "../dist/policy/merge-recovery.js";
+import { loadSigner } from "../dist/workflow/merge-auth.js";
 import { actorFor } from "../dist/workflow/actor.js";
 import type { Policy } from "../dist/policy/types.js";
 import { connect, createTestDatabase } from "./support/pg.ts";
@@ -36,6 +38,10 @@ const handoff = (blueprintId: string) => ({
   deviations_from_blueprint: L("No deviations."), known_limits: L("None."), bug_hunt: L(), unrelated_findings: L("None."), prohibited_actions_not_performed: L("No push."), working_tree_notes: L("clean"),
 });
 
+const approval = (blueprintId: string, handoffId: string) => ({
+  type: "validation_approval", blueprint_comment_id: blueprintId, handoff_comment_id: handoffId, commits_validated: L(), cumulative_diff_review: "reviewed", contracts_rechecked: L(), owners_rechecked: L(),
+  acceptance_results: L(), tests_verified: L(), runtime_evidence_verified: L("None."), regression_hunt: L(), issues_created: L("None."), known_limits: L("None."), po_gates_not_run: L("push"), verdict: "approved",
+});
 const QUIET = { getAll: async () => [] } as never; // Taiga with nothing in flight
 let db: Awaited<ReturnType<typeof createTestDatabase>>;
 let pool: ReturnType<typeof createPool>;
@@ -165,6 +171,27 @@ test("Assigned follows the active policy: under GPT-only the Task is assigned to
     assert.equal((task as { assigned_to?: number }).assigned_to, 11, "the legacy owner of In Progress is Claude (12): the policy says GPT");
     assert.equal(out.integrity, undefined);
   } finally { delete process.env.TAIGA_MCP_EXPECTED_ACCOUNT_GPT; delete process.env.TAIGA_MCP_EXPECTED_ACCOUNT_CLAUDE; members = []; }
+});
+
+test("a Done approved with no merge_context while the hand-off declares a branch is authorized, registers an unsigned obligation for the PO, and signs nothing", async () => {
+  assert.equal(payload(await move("gpt", T.prog, blueprint())).transitioned, true);
+  const bp = comments.find((c) => c.comment.includes("Implementation Blueprint"))!.id;
+  assert.equal(payload(await move("gpt", T.val, handoff(bp))).transitioned, true);
+  const ho = comments.find((c) => c.comment.includes("Execution Handoff"))!.id;
+  const done = payload(await move("gpt", T.done, approval(bp, ho)));
+  assert.equal(done.transitioned, true, JSON.stringify(done));
+  assert.equal(done.merge_authorization, undefined, "nothing was signed");
+  assert.equal(done.merge_authorization_owed.branch, "feature/x");
+  const row = (await pool.query("SELECT state, context, work_item, envelope, journal_id FROM merge_obligation WHERE authorization_id = $1", [done.merge_authorization_owed.authorization_id])).rows[0];
+  assert.deepEqual([row.state, row.context, row.work_item, row.envelope], ["review", null, null, null]);
+  const phase = async () => (await pool.query("SELECT phase FROM mutation_journal WHERE id = $1", [row.journal_id])).rows[0].phase;
+  assert.equal(await phase(), "pending_effect", "the effect is still owed");
+  // The recovery never signs it (there is no context to sign), and only the PO closes it.
+  const signer = loadSigner({ TAIGA_MCP_MERGE_AUTH_PRIVATE_KEY_B64: generateKeyPairSync("ed25519").privateKey.export({ type: "pkcs8", format: "der" }).toString("base64") });
+  assert.equal((await recoverMergeObligations(runtime, {} as never, signer)).signed, 0);
+  assert.equal((await pool.query("SELECT state FROM merge_obligation WHERE authorization_id = $1", [done.merge_authorization_owed.authorization_id])).rows[0].state, "review");
+  await resolveObligation(pool, binding, "po", { authorizationId: done.merge_authorization_owed.authorization_id, reason: "no merge is intended for this branch" });
+  assert.equal(await phase(), "completed");
 });
 
 test("GPT-only stays GPT-only through recovery: a lost ledger is rebuilt with GPT as the recipient, never Claude", async () => {

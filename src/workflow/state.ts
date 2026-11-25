@@ -30,6 +30,8 @@ export interface Parsed {
   movedFrom?: string; decisionRequestId?: string; nextStatus?: string; nextOwner?: string;
   /** Continuation Handled evidence: the exact continuation id that was handled. */
   continuationId?: string;
+  /** Execution Handoff: the work branch the hand-off declares (undefined when none). */
+  branch?: string;
 }
 
 // Section starts are recognised from the labels the template DECLARES for its body fields (exact line), plus the legacy form
@@ -103,6 +105,7 @@ export function parseArtifact(rec: Rec, set: TemplateSet): Parsed | null {
     p.question = s.get("question")?.join("\n").trim();
     p.contextEvidence = (s.get("context_evidence") ?? []).filter((l) => l.startsWith("- ")).map((l) => l.slice(2));
   }
+  if (p.kind === "execution_handoff") p.branch = sectionsOf(rest, labels).get("branch")?.join("\n").trim() || undefined;
   if (p.kind === "workflow_response") { p.requestId = get("request_id"); p.resolved = get("resolved") === "yes"; }
   if (p.kind === "request_resume") p.requestId = get("request_id");
   if (p.kind === "continuation_handled") p.continuationId = get("continuation_id");
