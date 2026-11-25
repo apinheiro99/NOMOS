@@ -36,3 +36,20 @@ test("GPT acting for itself: no Bridge command runs, the continuation is recorde
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test("a managed project with nobody to notify makes no notice, and the explicit recipient reaches the Bridge command as --to", async () => {
+  assert.equal(noticeForTransition("gpt", "to do", "in progress", 7, "In Progress", undefined, "task", 49, null), null, "no fallback to the other party");
+  const dir = mkdtempSync(join(tmpdir(), "notify-"));
+  try {
+    const argsFile = join(dir, "args");
+    const script = join(dir, "notifier.cjs");
+    writeFileSync(script, `require("fs").writeFileSync(${JSON.stringify(argsFile)}, process.argv.slice(2).join(" "))`);
+    process.env.TAIGA_MCP_CONTINUATION_FILE = join(dir, "c.jsonl");
+    const env = { ...process.env, TAIGA_MCP_NOTIFY_COMMAND: JSON.stringify(["node", script]) };
+    await announce(noticeForTransition("gpt", "to do", "in progress", 8, "In Progress", undefined, "task", 49, "claude")!, "c3", env);
+    assert.match(readFileSync(argsFile, "utf8"), /--from gpt --to claude/);
+  } finally {
+    delete process.env.TAIGA_MCP_CONTINUATION_FILE;
+    rmSync(dir, { recursive: true, force: true });
+  }
+});

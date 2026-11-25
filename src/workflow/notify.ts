@@ -24,9 +24,11 @@ export const otherParty = (p: Party): Party => (p === "gpt" ? "claude" : "gpt");
 const isParty = (r: ActorRole | null | undefined): r is Party => r === "gpt" || r === "claude";
 
 // Which transition produces which notice. Cancel, blocker and PO overrides have no Bridge notice (the PO is not a Bridge party).
-export function noticeForTransition(role: ActorRole | null, from: string, to: string, taskRef: number | undefined, statusName: string, requestId?: string, entity: "task" | "userstory" = "task", projectId?: number, recipient?: Party): Notice | null {
+export function noticeForTransition(role: ActorRole | null, from: string, to: string, taskRef: number | undefined, statusName: string, requestId?: string, entity: "task" | "userstory" = "task", projectId?: number, recipient?: Party | null): Notice | null {
   if (!isParty(role) || taskRef === undefined) return null;
-  // The recipient is stated, never assumed: a managed project names it from its policy; otherwise it is the other party (the legacy rule).
+  // The recipient is stated, never assumed: a managed project names it from its policy (null = nobody to notify, no fallback); only a project outside the
+  // engine (undefined) keeps the legacy rule, the other party.
+  if (recipient === null) return null;
   const next = recipient ?? otherParty(role);
   // A Story only notifies its approved completion; every other Story move (start, handoff, correction) stays silent.
   if (entity === "userstory") return from === "gpt validation" && to === "done" ? { type: "STORY_DONE", to: next, storyRef: taskRef, projectId, from: role, status: statusName } : null;
@@ -63,7 +65,7 @@ export async function emitNotice(n: Notice | null, env: NodeJS.ProcessEnv = proc
   if (cmd === "invalid") return "failed";
   if (n === null) return "skipped";
   if (n.to === n.from) return "skipped"; // the actor is its own recipient: nothing to point anyone at (the continuation is still recorded)
-  const args = [...cmd.slice(1), "--type", n.type, ...entityArgs(n), "--from", n.from, ...(n.requestId ? ["--request", n.requestId] : []), ...(n.status ? ["--status", n.status] : [])];
+  const args = [...cmd.slice(1), "--type", n.type, ...entityArgs(n), "--from", n.from, "--to", n.to, ...(n.requestId ? ["--request", n.requestId] : []), ...(n.status ? ["--status", n.status] : [])];
   const clean: NodeJS.ProcessEnv = { PATH: env.PATH, HOME: env.HOME, LANG: env.LANG };
   for (const [k, v] of Object.entries(env)) if (k.startsWith("CLAUDE_BRIDGE_")) clean[k] = v;
   return new Promise((resolve) => {

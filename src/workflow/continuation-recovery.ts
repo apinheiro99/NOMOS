@@ -1,5 +1,7 @@
 import type { TaigaClient } from "../client.js";
 import { continuationOf, recordContinuation } from "./continuation.js";
+import { recipientOf } from "../policy/evaluator.js";
+import type { Policy } from "../policy/types.js";
 import { vocabulary } from "./policy.js";
 import { STATUS_BASE } from "./result.js";
 import { analyse, type HistoryItem, type Parsed } from "./state.js";
@@ -14,7 +16,9 @@ type Row = { id: number; ref?: number; status?: number; user_story?: number | nu
 const last = (all: Parsed[], kind: string) => [...all].reverse().find((p) => p.kind === kind);
 const party = (a: string | undefined): "gpt" | "claude" => (a === "GPT" || a === "gpt" ? "gpt" : "claude");
 
-export async function reconcileContinuations(client: TaigaClient, project: number): Promise<{ recovered: number }> {
+// `policy` is the project's active policy when the engine manages it: the recipient of a status-driven obligation is then the owner the policy names for that
+// status (as at emission), never the legacy "other party"; an owner that is not a Bridge party leaves no obligation. Without a policy the legacy rule holds.
+export async function reconcileContinuations(client: TaigaClient, project: number, policy?: Policy): Promise<{ recovered: number }> {
   const milestones = (await client.getAll("/milestones", { project, closed: false })) as { id: number }[];
   const taskVocab = vocabulary("task", await client.get(`/${STATUS_BASE.task}`, { project }));
   const storyVocab = vocabulary("userstory", await client.get(`/${STATUS_BASE.userstory}`, { project }));
@@ -22,7 +26,9 @@ export async function reconcileContinuations(client: TaigaClient, project: numbe
   const set = loadTemplates();
   let recovered = 0;
   let handled = new Set<string>(); // continuations proven handled by Taiga evidence on the card being analysed
-  const add = (type: string, to: "gpt" | "claude", from: "gpt" | "claude", entity: "task" | "userstory", ref: number, source: string, extra: { request_id?: string; status?: string } = {}) => {
+  const add = (type: string, legacyTo: "gpt" | "claude", from: "gpt" | "claude", entity: "task" | "userstory", ref: number, source: string, extra: { request_id?: string; status?: string } = {}, atStatus?: string) => {
+    const to = policy && atStatus ? recipientOf(policy, entity, atStatus) : legacyTo;
+    if (!to) return;
     const c = continuationOf(type, to, from, entity, ref, project, source, extra);
     if (!handled.has(c.id) && !recordContinuation(c).duplicate) recovered++;
   };
@@ -37,9 +43,9 @@ export async function reconcileContinuations(client: TaigaClient, project: numbe
       if (name !== "gpt validation" && name !== "done") continue;
       const { all, storyHandoff, handledContinuations } = await analysed("userstory", s.id);
       handled = handledContinuations;
-      if (name === "gpt validation" && storyHandoff?.kind === "story_readiness_promotion") add("STORY_READY_FOR_VALIDATION", "gpt", party(storyHandoff.author), "userstory", s.ref!, storyHandoff.id);
+      if (name === "gpt validation" && storyHandoff?.kind === "story_readiness_promotion") add("STORY_READY_FOR_VALIDATION", "gpt", party(storyHandoff.author), "userstory", s.ref!, storyHandoff.id, {}, "gpt validation");
       const approval = last(all, "story_validation_approval");
-      if (name === "done" && approval) add("STORY_DONE", "claude", "gpt", "userstory", s.ref!, approval.id, { status: "Done" });
+      if (name === "done" && approval) add("STORY_DONE", "claude", "gpt", "userstory", s.ref!, approval.id, { status: "Done" }, "done");
     }
     for (const t of tasks) {
       const name = taskVocab.nameById.get(t.status ?? -1);
@@ -48,9 +54,9 @@ export async function reconcileContinuations(client: TaigaClient, project: numbe
       if (name === "done" && (parent === undefined || parent === "done" || parent === "cancelled")) continue; // a finished Story's Tasks are history
       const an = await analysed("task", t.id);
       handled = an.handledContinuations;
-      if (name === "in progress" && an.blueprint) add(an.blueprint.mode === "correction" ? "TASK_RETURNED_TO_IN_PROGRESS" : "TASK_RELEASED", "claude", "gpt", "task", t.ref!, an.blueprint.id, { status: "In Progress" });
-      if (name === "gpt validation" && an.handoff) add("TASK_MOVED_TO_GPT_VALIDATION", "gpt", "claude", "task", t.ref!, an.handoff.id, { status: "GPT Validation" });
-      if (name === "done" && an.approval) add("TASK_DONE", "claude", "gpt", "task", t.ref!, an.approval.id, { status: "Done" });
+      if (name === "in progress" && an.blueprint) add(an.blueprint.mode === "correction" ? "TASK_RETURNED_TO_IN_PROGRESS" : "TASK_RELEASED", "claude", "gpt", "task", t.ref!, an.blueprint.id, { status: "In Progress" }, "in progress");
+      if (name === "gpt validation" && an.handoff) add("TASK_MOVED_TO_GPT_VALIDATION", "gpt", "claude", "task", t.ref!, an.handoff.id, { status: "GPT Validation" }, "gpt validation");
+      if (name === "done" && an.approval) add("TASK_DONE", "claude", "gpt", "task", t.ref!, an.approval.id, { status: "Done" }, "done");
       // The CURRENT STATUS decides: only a Task visibly in Request has a Request obligation, and the latest request/response in the history is
       // merely the evidence the pointer cites. Old request comments on a Task in any other status create nothing.
       if (name === "request") {

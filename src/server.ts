@@ -65,7 +65,7 @@ export function createTaigaMcpServer(client: TaigaClient = new TaigaClient(), id
   registerExportImportTools(server, client);
   registerGovernanceTools(server, client, governance, identity, runtime);
   registerWorkflowTools(server, client, identity, governance, runtime);
-  registerContinuationTools(server, client, identity);
+  registerContinuationTools(server, client, identity, runtime);
   registerAssignmentTools(server, client);
 
   return server;

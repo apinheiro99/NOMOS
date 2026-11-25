@@ -928,13 +928,13 @@ test("notifications: every ownership event emits one typed pointer AFTER Taiga p
   const argv = () => sent().map((s) => s.argv.slice(1).join(" "));
   const r = okr(await tr("gpt", T.prog, blueprint()));
   assert.equal(r.notification, "sent");
-  assert.equal(argv().at(-1), "--type TASK_RELEASED --task 905 --project 49 --from gpt --status In Progress");
+  assert.equal(argv().at(-1), "--type TASK_RELEASED --task 905 --project 49 --from gpt --to claude --status In Progress");
   okr(await tr("claude", T.val, handoff({ blueprint_comment_id: bpId() })));
-  assert.match(argv().at(-1), /^--type TASK_MOVED_TO_GPT_VALIDATION --task 905 --project 49 --from claude --status GPT Validation$/);
+  assert.match(argv().at(-1), /^--type TASK_MOVED_TO_GPT_VALIDATION --task 905 --project 49 --from claude --to gpt --status GPT Validation$/);
   okr(await tr("gpt", T.prog, correction({ supersedes_blueprint_comment_id: bpId() })));
-  assert.match(argv().at(-1), /^--type TASK_RETURNED_TO_IN_PROGRESS --task 905 --project 49 --from gpt/);
+  assert.match(argv().at(-1), /^--type TASK_RETURNED_TO_IN_PROGRESS --task 905 --project 49 --from gpt --to claude/);
   okr(await tr("claude", T.human, hdr()));
-  assert.match(argv().at(-1), /^--type TASK_MOVED_TO_HUMAN_DECISION --task 905 --project 49 --from claude/);
+  assert.match(argv().at(-1), /^--type TASK_MOVED_TO_HUMAN_DECISION --task 905 --project 49 --from claude --to gpt/);
   assert.ok(sent().every((s) => s.leaked.length === 0), "the child never sees TAIGA_* credentials");
   assert.ok(sent().every((s) => s.argv.join(" ").length < 160), "identifiers only");
 });
@@ -945,16 +945,16 @@ test("notifications: Done, requests (opened / answered / resolved) and PO overri
   await toValidation();
   sent(); // flush reads
   okr(await rq("claude", { blocking: true }));
-  assert.equal(last(), "--type WORKFLOW_REQUEST_OPENED --task 905 --project 49 --from claude --request R-905-1");
+  assert.equal(last(), "--type WORKFLOW_REQUEST_OPENED --task 905 --project 49 --from claude --to gpt --request R-905-1");
   okr(await ans("gpt", "R-905-1", { resolved: false }));
-  assert.equal(last(), "--type WORKFLOW_REQUEST_ANSWERED --task 905 --project 49 --from gpt --request R-905-1");
+  assert.equal(last(), "--type WORKFLOW_REQUEST_ANSWERED --task 905 --project 49 --from gpt --to claude --request R-905-1");
   okr(await ans("gpt", "R-905-1"));
-  assert.equal(last(), "--type WORKFLOW_REQUEST_RESOLVED --task 905 --project 49 --from gpt --request R-905-1");
+  assert.equal(last(), "--type WORKFLOW_REQUEST_RESOLVED --task 905 --project 49 --from gpt --to claude --request R-905-1");
   const count = sent().length;
   okr(await rq("claude", { to_actor: "po" }));
   assert.equal(sent().length, count, "the PO is not a Bridge party: no notification");
   okr(await tr("gpt", T.done, approval({ blueprint_comment_id: bpId(), handoff_comment_id: cur("Execution Handoff") })));
-  assert.match(last(), /^--type TASK_DONE --task 905 --project 49 --from gpt --status Done$/);
+  assert.match(last(), /^--type TASK_DONE --task 905 --project 49 --from gpt --to claude --status Done$/);
   const n = sent().length;
   okr(await tr("po", T.prog, poDecision()));
   assert.equal(sent().length, n, "a PO override has no Bridge notice");
@@ -974,7 +974,7 @@ test("notifications: an approved Story Done emits exactly one STORY_DONE pointer
   const r = okr(await sttr("gpt", S.done, storyApproval({ handoff_comment_id: h })));
   assert.equal(world.userstory.entity.status, S.done, "persisted before the pointer");
   assert.equal(r.notification, "sent");
-  assert.deepEqual(argv().slice(n0), ["--type STORY_DONE --story 12 --project 49 --from gpt --status Done"], "exactly one typed pointer: Story + project identity, no --task");
+  assert.deepEqual(argv().slice(n0), ["--type STORY_DONE --story 12 --project 49 --from gpt --to claude --status Done"], "exactly one typed pointer: Story + project identity, no --task");
   // a failing notifier never undoes the completed Story
   world.userstory.entity.status = S.val;
   process.env.TAIGA_MCP_NOTIFY_COMMAND = JSON.stringify(["/definitely/not/a/binary"]);
@@ -1183,7 +1183,7 @@ test("Request status: notifications and templates", async () => {
   const sent = fakeNotifier();
   await release();
   okr(await tr("claude", T.req, reqArt()));
-  assert.equal(sent().at(-1).argv.slice(1).join(" "), "--type WORKFLOW_REQUEST_OPENED --task 905 --project 49 --from claude --request R-905-1");
+  assert.equal(sent().at(-1).argv.slice(1).join(" "), "--type WORKFLOW_REQUEST_OPENED --task 905 --project 49 --from claude --to gpt --request R-905-1");
   const set = loadTemplates();
   assert.equal(latest(set, "request-resume").version, "1.0.0");
   assert.ok(latest(set, "workflow-request").fields.some((f) => f.key === "to_actor" && f.header));
