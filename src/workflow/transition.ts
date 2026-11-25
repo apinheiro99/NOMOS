@@ -283,6 +283,20 @@ async function decideAndWrite(client: TaigaClient, identity: WorkflowIdentity, a
       return rejection({ ...ctxBase, code: "WORKFLOW_POLICY_UNAVAILABLE", message: `the merge obligation could not be stored, so nothing was written: ${(e as Error).message}` });
     }
   }
+  // A Task approved to Done with no merge_context while its hand-off declares a work branch still owes a merge authorization this call cannot issue (no SHA, target or
+  // authorization is invented). The obligation is stored BEFORE the write, with no context and in `review`: the Done is authorized, nothing is signed, and the PO sees it.
+  const declaredBranch = res.artifact === "validation_approval" && to === "done" && a.entity === "task" && a.mergeContext === undefined ? an.handoff?.branch : undefined;
+  let unsignedObligation: { authorization_id: string; branch: string } | undefined;
+  if (declaredBranch && managed && runtime && journalId && item.project !== undefined) {
+    const authorizationId = uuidv7();
+    try {
+      await runtime.openMergeObligation(managed, { authorizationId, entity: "task", taigaId: a.id, doneStatus: a.status, taigaProject: item.project, journalId, actor: role as "gpt" | "claude" | "po", recipient: recipientOf(managed.policy, "task", "done"), approvalHash: createHash("sha256").update(signed).digest("hex") });
+      unsignedObligation = { authorization_id: authorizationId, branch: declaredBranch };
+    } catch (e) {
+      await runtime.finish(journalId, "failed", { problem: "merge obligation not stored" }).catch(() => undefined);
+      return rejection({ ...ctxBase, code: "WORKFLOW_POLICY_UNAVAILABLE", message: `the merge obligation could not be stored, so nothing was written: ${(e as Error).message}` });
+    }
+  }
   // The artifact comment and the status write go through the one governed write boundary: fresh read, separate validators, write, verification.
   const out = await mutate(client, {
     read: () => client.get(`/${BASE[a.entity]}/${a.id}`),
@@ -333,6 +347,7 @@ async function decideAndWrite(client: TaigaClient, identity: WorkflowIdentity, a
       mergeAuth = { merge_authorization_error: { message: (e as Error).message, note: "The Done transition IS persisted and authoritative; do not retry it. Only the authorization was not issued." } };
     }
   }
+  if (unsignedObligation) mergeAuth = { merge_authorization_owed: { ...unsignedObligation, note: "The hand-off declares a branch but the approval carried no merge_context: no authorization was issued. The obligation is stored for the PO to resolve; the Done stands." } };
   // A closed Story sinks to the tail of its Sprint queue. The closure is already authoritative, so a failure here is reported next to the
   // transition result (never as a failed transition, which a caller could retry) and never suppresses the notification below.
   let queueReorder: unknown;

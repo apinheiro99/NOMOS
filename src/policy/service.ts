@@ -186,8 +186,10 @@ export async function listObligations(db: Db, projectId: string) {
 export const resolveObligation = (pool: pg.Pool, projectId: string, by: ActorRole, a: { authorizationId: string; reason: string }) =>
   withProjectLock(pool, projectId, (c) => withTransaction(c, async () => {
     requirePo(by, "resolve a merge obligation");
-    const done = await c.query("UPDATE merge_obligation SET state = 'abandoned', updated_at = now() WHERE project_id = $1 AND authorization_id = $2 AND state = 'review'", [projectId, a.authorizationId]);
+    const done = await c.query<{ journal_id: string }>("UPDATE merge_obligation SET state = 'abandoned', updated_at = now() WHERE project_id = $1 AND authorization_id = $2 AND state = 'review' RETURNING journal_id", [projectId, a.authorizationId]);
     if (!done.rowCount) throw new PolicyError(404, "not_found", "no obligation in review has that id in this project");
+    // The PO closed what the entry was waiting for.
+    await c.query("UPDATE mutation_journal SET phase = 'completed', updated_at = now() WHERE id = $1 AND phase = 'pending_effect'", [done.rows[0].journal_id]);
     await audit(c, projectId, by, "resolve_obligation", "allow", { authorizationId: a.authorizationId, reason: a.reason });
     return { authorizationId: a.authorizationId, state: "abandoned" };
   }));
