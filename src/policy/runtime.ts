@@ -28,6 +28,8 @@ export interface PolicyRuntime {
   provision(a: { principal: string; requestKey: string; requestHash: string }, create: Parameters<typeof provisionProject>[3]): ReturnType<typeof provisionProject>;
   openMergeObligation(m: ManagedPolicy, o: MergeObligation): Promise<void>;
   settleMergeObligation(authorizationId: string, outcome: Settlement): Promise<void>;
+  /** The policy that was in force when the governed operation that wrote this artifact comment was authorized (via the mutation journal); undefined when none is recorded. */
+  policyAt(taigaProjectId: number, artifactCommentId: string): Promise<Policy | undefined>;
   /** The obligations whose outcome is still unknown. */
   pendingMergeObligations(): Promise<PendingObligation[]>;
 }
@@ -103,6 +105,18 @@ export function createPolicyRuntime(pool: pg.Pool, baseUrl: string): PolicyRunti
       await pool.query(
         "UPDATE merge_obligation SET state = $2, envelope = coalesce($4::jsonb, envelope), approval_comment_id = coalesce($5, approval_comment_id), updated_at = now() WHERE authorization_id = $1 AND state = $3",
         [authorizationId, state, from, envelope, commentId]);
+    },
+    async policyAt(taigaProjectId, artifactCommentId) {
+      const { rows } = await pool.query<{ payload: Policy }>(
+        `SELECT v.payload
+           FROM taiga_instance i
+           JOIN project_binding b ON b.instance_id = i.id AND b.taiga_project_id = $2
+           JOIN mutation_journal j ON j.project_id = b.id AND j.result->>'comment_id' = $3
+           JOIN policy_activation a ON a.id = j.activation_id
+           JOIN policy_version v ON v.project_id = a.project_id AND v.id = a.policy_id
+          WHERE i.base_url = $1 ORDER BY j.created_at DESC LIMIT 1`,
+        [baseUrl, taigaProjectId, artifactCommentId]);
+      return rows[0]?.payload;
     },
     async pendingMergeObligations() {
       const { rows } = await pool.query("SELECT authorization_id, activation_id, journal_id, actor, recipient, approval_hash, entity, taiga_id, done_status, taiga_project, context, work_item, target_work_item FROM merge_obligation WHERE state = 'pending' ORDER BY created_at");

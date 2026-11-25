@@ -175,6 +175,26 @@ test("the next decision uses the newly approved revision, with no restart", asyn
   assert.equal(handed.transitioned, true, JSON.stringify(handed));
 });
 
+test("recovery uses the policy that authorized the operation, not the one active now", async () => {
+  assert.equal(payload(await move("gpt", T.prog, blueprint())).transitioned, true); // authorized while GPT owns "in progress"
+  rmSync(process.env.TAIGA_MCP_CONTINUATION_FILE!, { force: true }); // the ledger is lost (an open continuation would also block the approval)
+  const later = gptOnly();
+  later.roles.push("claude");
+  later.entities.task.states["in progress"].owner = "claude";
+  await activate(later, (await runtime.forProject(49))!.revision);
+  task.milestone = 1 as never;
+  const listed = payload(await call("gpt", "taiga_continuations_pending", { project: 49 }));
+  assert.deepEqual([...new Set(listed.continuations.map((c: { to: string; from: string }) => `${c.from}>${c.to}`))], ["gpt>gpt"], JSON.stringify(listed));
+});
+
+test("recovery takes the artifact's real author: a PO-authored artifact leaves no pointer from GPT or Claude", async () => {
+  assert.equal(payload(await move("po", T.prog, blueprint())).transitioned, true);
+  rmSync(process.env.TAIGA_MCP_CONTINUATION_FILE!, { force: true });
+  task.milestone = 1 as never;
+  const listed = payload(await call("gpt", "taiga_continuations_pending", { project: 49 }));
+  assert.deepEqual(listed.continuations, [], JSON.stringify(listed));
+});
+
 test("a project the engine does not manage keeps the legacy rules", async () => {
   task.project = 50;
   const before = (await journal()).length;

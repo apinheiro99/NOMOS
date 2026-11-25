@@ -25,7 +25,7 @@ export function registerContinuationTools(server: McpServer, client: TaigaClient
       try {
         const projects = project !== undefined ? [project] : ((await client.get("/projects")) as { id: number }[]).map((p) => p.id);
         recovery = { recovered: 0 };
-        for (const p of projects) recovery.recovered += (await reconcileContinuations(client, p, (await runtime?.forProject(p))?.policy)).recovered;
+        for (const p of projects) recovery.recovered += (await reconcileContinuations(client, p, runtime && ((id) => runtime.policyAt(p, id)))).recovered;
       } catch (e) { recovery = { error: (e as Error).message }; } // a Taiga read problem never hides what the ledger already holds
       const items = pendingContinuations(who, project);
       return text({ actor: who, count: items.length, continuations: items, recovery, note: NOT_AUTHORITY });
