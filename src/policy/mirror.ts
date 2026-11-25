@@ -87,7 +87,9 @@ export async function mirrorProjects(pool: pg.Pool, client: TaigaClient, baseUrl
   return { applied: true, items };
 }
 
-// Records one project's lifecycle (and, for a new managed project, its first policy). Used by the mirror and by project provisioning.
+// Records one project's lifecycle (and, for a new managed project, its first policy). Used by the mirror and by project provisioning. The plan the caller made was
+// computed before the lock and may be stale: under the lock the binding is read again and the plan is decided again from that current row, so an activation or a
+// lifecycle that changed in between is never overwritten with an old decision (and a project another reconcile already brought up to date is left alone).
 export async function bindProject(pool: pg.Pool, instanceId: string, existingId: string | undefined, item: MirrorItem, s: Seen | undefined): Promise<void> {
   if (!existingId) {
     await pool.query(
@@ -96,12 +98,17 @@ export async function bindProject(pool: pg.Pool, instanceId: string, existingId:
   }
   const id = existingId ?? (await pool.query<{ id: string }>("SELECT id FROM project_binding WHERE instance_id = $1 AND taiga_project_id = $2", [instanceId, item.taigaProjectId])).rows[0].id;
   await withProjectLock(pool, id, (c) => withTransaction(c, async () => {
+    const { rows } = await c.query<{ lifecycle: string; slug: string; name: string; profile_fingerprint: string | null; uuid_ready: boolean; has_policy: boolean }>(
+      "SELECT lifecycle, slug, name, profile_fingerprint, uuid_ready, active_activation_id IS NOT NULL AS has_policy FROM project_binding WHERE id = $1", [id]);
+    const r = rows[0];
+    const now = plan({ id, lifecycle: r.lifecycle, slug: r.slug, name: r.name, fingerprint: r.profile_fingerprint, uuidReady: r.uuid_ready, hasPolicy: r.has_policy }, s);
+    if (now.action === "none") return;
     // The first policy exists before the project is called managed: a crash in between leaves it `pending`, which the runtime refuses.
-    if (item.action === "create_managed") await bootstrapPolicy(c, id, legacySeed());
+    if (now.action === "create_managed") await bootstrapPolicy(c, id, legacySeed());
     // A drift keeps the fingerprint the policy was bound to; only that state can recover it.
-    const fingerprint = item.action === "mark_drift" ? null : s?.fingerprint ?? null;
+    const fingerprint = now.action === "mark_drift" ? null : s?.fingerprint ?? null;
     await c.query(
       "UPDATE project_binding SET lifecycle = $2, slug = $3, name = $4, profile_fingerprint = coalesce($5, profile_fingerprint), uuid_ready = coalesce($6, uuid_ready), last_seen_at = CASE WHEN $5::text IS NULL THEN last_seen_at ELSE now() END WHERE id = $1",
-      [id, item.lifecycle, item.slug, item.name, fingerprint, s?.uuidReady ?? null]);
+      [id, now.lifecycle, item.slug, item.name, fingerprint, s?.uuidReady ?? null]);
   }));
 }

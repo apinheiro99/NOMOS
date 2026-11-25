@@ -3,9 +3,10 @@ import assert from "node:assert/strict";
 import { fileURLToPath } from "node:url";
 import { migrate } from "../dist/policy/migrate.js";
 import { createPool } from "../dist/policy/repository.js";
-import { mirrorProjects, plan } from "../dist/policy/mirror.js";
+import { bindProject, inspect, mirrorProjects, plan } from "../dist/policy/mirror.js";
 import { createPolicyRuntime } from "../dist/policy/runtime.js";
-import { activePolicy } from "../dist/policy/service.js";
+import { legacySeed } from "../dist/policy/legacy-seed.js";
+import { activePolicy, approve, propose } from "../dist/policy/service.js";
 import { connect, createTestDatabase } from "./support/pg.ts";
 
 // F3.1: the mirror, on real PostgreSQL with a fake Taiga. It reads Taiga, never writes a card, and never replaces a policy.
@@ -189,4 +190,35 @@ test("a managed project that was inaccessible comes back only to the fingerprint
   const withRole = { ...original, get: async (path: string, params: { project: number }) => path === "/roles" ? [{ id: 1, name: "Product Owner" }, { id: 2, name: "Extra" }] : (original as never as { get: (p: string, q: { project: number }) => Promise<unknown> }).get(path, params) };
   assert.deepEqual((await mirrorProjects(pool, withRole as never, BASE, { apply: true })).items.filter((i) => i.taigaProjectId === 77).map((i) => i.action), ["mark_drift"]);
   assert.equal((await rows()).find((r: { id: number }) => r.id === 77).lifecycle, "drift");
+});
+
+test("two reconciles at once: one project, one first policy, and a busy lock is an error, not a second decision", async () => {
+  reset({ projects: [{ id: 60, slug: "race", name: "Race" }], statuses: { 60: TASK } });
+  const both = await Promise.allSettled([sync(), sync()]);
+  assert.equal(both.some((r) => r.status === "fulfilled"), true);
+  assert.equal((await pool.query("SELECT count(*)::int AS n FROM project_binding WHERE taiga_project_id = 60")).rows[0].n, 1);
+  assert.equal((await pool.query("SELECT count(*)::int AS n FROM policy_version v JOIN project_binding b ON b.id = v.project_id WHERE b.taiga_project_id = 60")).rows[0].n, 1);
+  assert.equal((await rows()).find((r) => r.id === 60)?.lifecycle, "managed");
+});
+
+test("a plan made before the lock never overwrites what changed since: an activation and a lifecycle stay as they are", async () => {
+  reset({ projects: [{ id: 61, slug: "stale", name: "Stale" }], statuses: { 61: TASK } });
+  const before = await sync(false);
+  const stale = before.items.find((i) => i.taigaProjectId === 61)!; // planned: create_managed
+  assert.equal(stale.action, "create_managed");
+  await sync(); // another reconcile gets there first
+  const bindingId = (await pool.query("SELECT id FROM project_binding WHERE taiga_project_id = 61")).rows[0].id;
+  const v = await propose(pool, bindingId, "gpt", legacySeed());
+  await approve(pool, bindingId, "po", { policyId: v.policyId, expectedRevision: 1, hash: v.hash, reason: "second" }, { getAll: async () => [] } as never);
+  const active = async () => (await pool.query("SELECT active_activation_id, lifecycle FROM project_binding WHERE id = $1", [bindingId])).rows[0];
+  const settled = await active();
+  const instance = (await pool.query("SELECT instance_id FROM project_binding WHERE id = $1", [bindingId])).rows[0].instance_id;
+  const seen = await inspect(fake(), world.projects[0]);
+  await bindProject(pool, instance, bindingId, stale, seen); // the stale decision arrives late
+  assert.deepEqual(await active(), settled, "the activation of revision 2 and the managed lifecycle are untouched");
+  assert.equal((await pool.query("SELECT count(*)::int AS n FROM policy_version WHERE project_id = $1", [bindingId])).rows[0].n, 2, "no second first-policy");
+  // The lifecycle moved to drift meanwhile (Taiga changed): a stale "refresh" is decided again from the row, and a project that is not eligible stays blocked.
+  await pool.query("UPDATE project_binding SET lifecycle = 'drift' WHERE id = $1", [bindingId]);
+  await bindProject(pool, instance, bindingId, { ...stale, action: "refresh", lifecycle: "managed" }, { ...seen, fingerprint: "changed" });
+  assert.equal((await active()).lifecycle, "drift", "a stale recovery cannot lift a drift whose fingerprint no longer matches");
 });
