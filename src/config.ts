@@ -45,3 +45,18 @@ export function isHostAllowed(hostHeader: string | undefined): boolean {
     return false;
   }
 }
+
+export interface AdminConfig { host: string; port: number; allowedOrigins: string[] }
+
+// The admin listener is private: loopback unless the operator opts in, never on the tunnel's port.
+export function parseAdminConfig(env: NodeJS.ProcessEnv = process.env): AdminConfig {
+  const host = (env.TAIGA_MCP_ADMIN_HOST ?? "127.0.0.1").trim();
+  if (!isLoopback(host) && env.TAIGA_MCP_HTTP_ALLOW_NON_LOOPBACK !== "1") {
+    throw new Error(`Refusing non-loopback admin bind "${host}": set TAIGA_MCP_HTTP_ALLOW_NON_LOOPBACK=1 to opt in`);
+  }
+  const rawPort = env.TAIGA_MCP_ADMIN_PORT ?? "8788";
+  const port = Number(rawPort);
+  if (!/^\d+$/.test(rawPort) || port > 65535) throw new Error(`Invalid TAIGA_MCP_ADMIN_PORT "${rawPort}"`);
+  const allowedOrigins = (env.TAIGA_MCP_ADMIN_ALLOWED_ORIGINS ?? "").split(",").map((o) => o.trim()).filter(Boolean);
+  return { host, port, allowedOrigins };
+}

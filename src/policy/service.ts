@@ -11,7 +11,7 @@ import type { Violation } from "./validator.js";
 
 // The use cases of the policy engine, shared by the MCP and the admin API. Every change takes the project lock first.
 export class PolicyError extends Error {
-  constructor(public readonly status: 403 | 404 | 409 | 422, public readonly code: string, message: string, public readonly problems: Violation[] = []) {
+  constructor(public readonly status: 403 | 404 | 405 | 409 | 413 | 422, public readonly code: string, message: string, public readonly problems: Violation[] = []) {
     super(message);
     this.name = "PolicyError";
   }
@@ -123,6 +123,7 @@ export const reject = (pool: pg.Pool, projectId: string, by: ActorRole, a: { pol
     if (!found.rowCount) throw new PolicyError(404, "not_found", "that proposal does not exist in this project");
     await c.query("INSERT INTO policy_review (id, project_id, policy_id, decision, actor, reason) VALUES ($1,$2,$3,'rejected',$4,$5)", [uuidv7(), projectId, a.policyId, by, a.reason]);
     await audit(c, projectId, by, "reject", "allow", { policyId: a.policyId });
+    return { policyId: a.policyId };
   }));
 
 // What the active policy would decide, with the facts the caller states. Writes nothing.

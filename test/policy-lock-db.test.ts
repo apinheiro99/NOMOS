@@ -15,7 +15,7 @@ after(async () => {
   await pool.end();
   await db.drop();
 });
-const held = async (projectId: string) => (await pool.query("SELECT count(*)::int AS n FROM pg_locks WHERE locktype = 'advisory' AND granted AND pid <> pg_backend_pid()")).rows[0].n > 0 && projectId;
+const held = async (projectId: string) => (await pool.query("SELECT count(*)::int AS n FROM pg_locks WHERE locktype = 'advisory' AND granted AND pid <> pg_backend_pid() AND database = (SELECT oid FROM pg_database WHERE datname = current_database())")).rows[0].n > 0 && projectId;
 
 test("a second request for the same project is refused while the first holds the lock", async () => {
   const project = randomUUID();
