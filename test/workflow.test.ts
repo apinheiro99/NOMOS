@@ -69,14 +69,18 @@ beforeEach(() => {
       const srow = sr && world.sprintRows?.find((r) => r.id === Number(sr[1]));
       if (world.failSprintPatch && body?.sprint_order !== undefined) return new Response("boom", { status: 500 });
       if (srow) { Object.assign(srow, { sprint_order: body.sprint_order, version: srow.version + 1 }); return ok({ ...srow }); }
+      world.beforePatch?.(k, body);
       if (world.failUnblock && body?.is_blocked === false) return new Response("boom", { status: 500 });
+      if (body.version !== undefined && world.strictVersion && body.version !== world[k].entity.version) return new Response(JSON.stringify({ _error_message: "The version doesn't match with the current one" }), { status: 400 });
       if (body?.comment !== undefined && !world.dropComments) world[k].comments.push({ id: world.uuidIds ? `${(0x393c47f0 + ++n).toString(16)}-dd90-11f1-84e4-cacb139fa1ca` : `c${++n}`, comment: body.comment, created_at: new Date(1760000000000 + n * 1000).toISOString() });
       // eslint-disable-next-line @typescript-eslint/no-unused-vars -- rest-omit
       const { comment, version, ...rest } = body;
       if (world.dropAssignee && k === "userstory") delete rest.assigned_to;
       if (world.dropClosed) delete rest.is_closed;
       if (world.dropStatus) delete rest.status;
-      Object.assign(world[k].entity, rest);
+      // As Taiga does: a write against a stale version is refused (when a test turns it on), and every accepted write moves the version.
+      Object.assign(world[k].entity, rest, { version: world[k].entity.version + 1 });
+      world.afterPatch?.(k, body);
       return ok({ ...world[k].entity });
     }
     return ok({});
@@ -351,6 +355,25 @@ test("Done: only GPT/PO with a Validation Approval that cites the current bluepr
   const r = okr(await tr("gpt", T.done, approval({ blueprint_comment_id: bp, handoff_comment_id: ho })));
   assert.equal(r.closed, true);
   assert.match(lastComment().comment, /^GPT Validation → Done\nSchema: Validation Approval 1\.0\.0\nAuthor: GPT\nModel: Unknown\nEffort: Unknown\nBlueprint: .+\nHandoff: /);
+});
+
+test("a change by the PO between validation, comment and status write is detected and never overwritten", async () => {
+  world.strictVersion = true;
+  const poMoves = () => { world.task.entity.status = T.todo + 100; world.task.entity.version += 1; };
+  // After validation, before the comment: Taiga refuses the stale version, nothing is written.
+  world.beforePatch = (_k, body) => { if (body.comment !== undefined) { world.beforePatch = undefined; poMoves(); } };
+  const early = await tr("gpt", T.prog, blueprint());
+  assert.equal(early.isError, true);
+  assert.equal(world.task.comments.length, 0);
+  assert.equal(requests.some((r) => r.method === "PATCH" && r.body.status !== undefined), false);
+  // After the comment, before the status write: the artifact stays, the PO's state is not overwritten.
+  world.task.entity.status = T.todo; world.task.entity.version = 3;
+  world.afterPatch = (_k, body) => { if (body.comment !== undefined) { world.afterPatch = undefined; poMoves(); } };
+  const late = await tr("gpt", T.prog, blueprint());
+  assert.match(late.content[0].text, /WORKFLOW_INTEGRITY_FAILURE/);
+  assert.equal(world.task.comments.length, 1);
+  assert.equal(world.task.entity.status, T.todo + 100, "the PO's decision stands");
+  assert.equal(requests.filter((r) => r.method === "PATCH" && r.body.status !== undefined).length, 0);
 });
 
 test("a free-form 'Validation — APPROVED' comment in history never satisfies the Done gate", async () => {

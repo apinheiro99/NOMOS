@@ -34,7 +34,7 @@ test("0003 rows survive 0004: a pending one becomes review, a signed one stays s
     "INSERT INTO merge_obligation (authorization_id, project_id, entity, taiga_id, done_status, taiga_project, context, work_item, target_work_item, state, envelope) VALUES ($1,$2,'task',7,5,49,'{}','{}','Story #3',$3,$4)", [aid, binding, state, envelope]);
   await row(pending, "pending", null);
   await row(signed, "signed", "{}");
-  assert.equal((await migrate(c, DIR)).join(), "0004_merge_obligation_evidence.sql");
+  assert.equal((await migrate(c, DIR)).join(), "0004_merge_obligation_evidence.sql,0005_journal_pending_effect.sql");
   const rows = (await c.query("SELECT authorization_id, state, journal_id, activation_id, actor, approval_hash FROM merge_obligation ORDER BY state")).rows;
   assert.deepEqual(rows.map((r) => [r.state, r.journal_id === r.authorization_id, r.actor, r.approval_hash]), [["review", true, "po", "legacy:unproven"], ["signed", true, "po", "legacy:unproven"]]);
   assert.equal((await c.query("SELECT count(*)::int AS n FROM mutation_journal WHERE result->>'legacy' = 'true' AND phase = 'completed'")).rows[0].n, 2);

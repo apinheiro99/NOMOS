@@ -10,6 +10,7 @@ import type { Policy } from "../dist/policy/types.js";
 import { connect, createTestDatabase } from "./support/pg.ts";
 
 // F2.3: the policy use cases on real PostgreSQL.
+const QUIET = { getAll: async () => [] } as never; // Taiga with nothing in flight
 let db: Awaited<ReturnType<typeof createTestDatabase>>;
 let pool: ReturnType<typeof createPool>;
 before(async () => {
@@ -63,7 +64,7 @@ test("propose then approve: the next decision uses the new revision, with no res
   assert.equal((await simulate(pool, pid, { entity: "task", role: "claude", from: "to do", to: "in progress" })).kind, "denied");
   const v = await propose(pool, pid, "gpt", changed());
   assert.equal((await activePolicy(pool, pid))?.revision, 1, "a proposal alone changes nothing");
-  await approve(pool, pid, "po", { policyId: v.policyId, expectedRevision: 1, hash: v.hash, reason: "let Claude start" });
+  await approve(pool, pid, "po", { policyId: v.policyId, expectedRevision: 1, hash: v.hash, reason: "let Claude start" }, QUIET);
   const d = await simulate(pool, pid, { entity: "task", role: "claude", from: "to do", to: "in progress" });
   assert.deepEqual([d.kind, d.revision], ["typed", 2]);
 });
@@ -73,9 +74,9 @@ test("a proposal made on an older revision is stale (409)", async () => {
   await initial(pid);
   const a = await propose(pool, pid, "gpt", changed());
   const b = await propose(pool, pid, "gpt", changed());
-  await approve(pool, pid, "po", { policyId: a.policyId, expectedRevision: 1, hash: a.hash, reason: "first" });
-  await expectError(approve(pool, pid, "po", { policyId: b.policyId, expectedRevision: 1, hash: b.hash, reason: "second" }), 409, "stale");
-  await expectError(approve(pool, pid, "po", { policyId: b.policyId, expectedRevision: 2, hash: b.hash, reason: "second" }), 409, "stale");
+  await approve(pool, pid, "po", { policyId: a.policyId, expectedRevision: 1, hash: a.hash, reason: "first" }, QUIET);
+  await expectError(approve(pool, pid, "po", { policyId: b.policyId, expectedRevision: 1, hash: b.hash, reason: "second" }, QUIET), 409, "stale");
+  await expectError(approve(pool, pid, "po", { policyId: b.policyId, expectedRevision: 2, hash: b.hash, reason: "second" }, QUIET), 409, "stale");
 });
 
 test("only the PO approves or rejects (403) and the hash must be the reviewed one (409)", async () => {
@@ -83,10 +84,10 @@ test("only the PO approves or rejects (403) and the hash must be the reviewed on
   await initial(pid);
   const v = await propose(pool, pid, "claude", changed());
   for (const role of ["gpt", "claude"] as const) {
-    await expectError(approve(pool, pid, role, { policyId: v.policyId, expectedRevision: 1, hash: v.hash, reason: "x" }), 403, "forbidden");
+    await expectError(approve(pool, pid, role, { policyId: v.policyId, expectedRevision: 1, hash: v.hash, reason: "x" }, QUIET), 403, "forbidden");
     await expectError(reject(pool, pid, role, { policyId: v.policyId, reason: "x" }), 403, "forbidden");
   }
-  await expectError(approve(pool, pid, "po", { policyId: v.policyId, expectedRevision: 1, hash: "0".repeat(64), reason: "x" }), 409, "hash_mismatch");
+  await expectError(approve(pool, pid, "po", { policyId: v.policyId, expectedRevision: 1, hash: "0".repeat(64), reason: "x" }, QUIET), 409, "hash_mismatch");
   await reject(pool, pid, "po", { policyId: v.policyId, reason: "not now" });
   assert.equal((await activePolicy(pool, pid))?.revision, 1);
 });
@@ -102,11 +103,11 @@ test("a rollback is a new proposal that copies the old version and still needs a
   const pid = await project();
   const first = await initial(pid);
   const v = await propose(pool, pid, "gpt", changed());
-  await approve(pool, pid, "po", { policyId: v.policyId, expectedRevision: 1, hash: v.hash, reason: "change" });
+  await approve(pool, pid, "po", { policyId: v.policyId, expectedRevision: 1, hash: v.hash, reason: "change" }, QUIET);
   const back = await rollback(pool, pid, "po", 1);
   assert.equal(back.hash, first.hash);
   assert.equal((await activePolicy(pool, pid))?.revision, 2, "not active until approved");
-  await approve(pool, pid, "po", { policyId: back.policyId, expectedRevision: 2, hash: back.hash, reason: "undo" });
+  await approve(pool, pid, "po", { policyId: back.policyId, expectedRevision: 2, hash: back.hash, reason: "undo" }, QUIET);
   assert.equal((await activePolicy(pool, pid))?.hash, first.hash);
   await expectError(rollback(pool, pid, "po", 99), 404, "not_found");
 });
@@ -128,8 +129,8 @@ test("two approvals at the same time: exactly one wins", async () => {
   const a = await propose(pool, pid, "gpt", changed());
   const b = await propose(pool, pid, "gpt", changed());
   const results = await Promise.allSettled([
-    approve(pool, pid, "po", { policyId: a.policyId, expectedRevision: 1, hash: a.hash, reason: "a" }),
-    approve(pool, pid, "po", { policyId: b.policyId, expectedRevision: 1, hash: b.hash, reason: "b" }),
+    approve(pool, pid, "po", { policyId: a.policyId, expectedRevision: 1, hash: a.hash, reason: "a" }, QUIET),
+    approve(pool, pid, "po", { policyId: b.policyId, expectedRevision: 1, hash: b.hash, reason: "b" }, QUIET),
   ]);
   assert.equal(results.filter((r) => r.status === "fulfilled").length, 1);
 });

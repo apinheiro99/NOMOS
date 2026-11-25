@@ -4,6 +4,9 @@ import type { ActorRole } from "../workflow/actor.js";
 import type { EntityKind } from "../workflow/policy.js";
 import { uuidv7 } from "../identity.js";
 import { evaluate } from "./evaluator.js";
+import type { TaigaClient } from "../client.js";
+import { norm } from "../workflow/policy.js";
+import { ACTIVE_STATUSES } from "../workflow/start-rules.js";
 import { withProjectLock, withTransaction } from "./repository.js";
 import type { Decision, Facts, Policy } from "./types.js";
 import { validatePolicy } from "./validator.js";
@@ -109,8 +112,29 @@ async function requireNoPendingWork(c: pg.PoolClient, projectId: string): Promis
   if (Object.values(pending).some((n) => n > 0)) throw new PolicyError(409, "pending_work", `the project has unfinished work from the current policy: ${JSON.stringify(pending)}`);
 }
 
+// Work in flight in Taiga that a policy change would strand: a card in an active status (decided under the current policy and not finished), or one in a status the
+// new policy does not have. Read under the project lock, every page, so a card on a later page counts. Each is listed; nothing is guessed.
+const CARDS = [["task", "tasks"], ["userstory", "userstories"], ["epic", "epics"]] as const;
+async function requireNoActiveWork(c: pg.PoolClient, client: TaigaClient, projectId: string, payload: Policy): Promise<void> {
+  const { rows } = await c.query<{ taiga_project_id: string }>("SELECT taiga_project_id FROM project_binding WHERE id = $1", [projectId]);
+  const active: string[] = [];
+  const unknown: string[] = [];
+  for (const [entity, path] of CARDS) {
+    const rules = payload.entities[entity];
+    const open = (await client.getAll(`/${path}`, { project: Number(rows[0].taiga_project_id), status__is_closed: false })) as { ref: number; status_extra_info?: { name?: string } }[];
+    for (const card of open) {
+      const status = norm(card.status_extra_info?.name ?? "");
+      if (ACTIVE_STATUSES.includes(status)) active.push(`${entity} #${card.ref} (${status})`);
+      // Only an entity whose every status is governed has a closed vocabulary; for the others a status the policy does not list is a plain, ungoverned one.
+      else if (rules.governed === "all" && !Object.hasOwn(rules.states, status)) unknown.push(`${entity} #${card.ref}`);
+    }
+  }
+  if (active.length) throw new PolicyError(409, "active_work", `${active.length} card(s) are in an active status: ${active.join(", ")}`);
+  if (unknown.length) throw new PolicyError(409, "cards_in_unknown_state", `${unknown.length} open card(s) sit in a status this policy does not have: ${unknown.join(", ")}`);
+}
+
 // Approves and activates in ONE transaction. The caller states the revision it saw and the exact hash it reviewed.
-export const approve = (pool: pg.Pool, projectId: string, by: ActorRole, a: { policyId: string; expectedRevision: number | null; hash: string; reason: string }) =>
+export const approve = (pool: pg.Pool, projectId: string, by: ActorRole, a: { policyId: string; expectedRevision: number | null; hash: string; reason: string }, taiga?: TaigaClient) =>
   withProjectLock(pool, projectId, (c) => withTransaction(c, async () => {
     requirePo(by, "approve a policy");
     const { rows } = await c.query<VersionRow>("SELECT id, revision, parent_id, payload, content_hash FROM policy_version WHERE project_id = $1 AND id = $2", [projectId, a.policyId]);
@@ -126,6 +150,11 @@ export const approve = (pool: pg.Pool, projectId: string, by: ActorRole, a: { po
       throw new PolicyError(409, "rejected", "this proposal was rejected: make a new proposal instead");
     }
     await requireNoPendingWork(c, projectId);
+    // Replacing a policy in force needs Taiga's word that nothing is in flight; the first activation has nothing decided before it.
+    if (current) {
+      if (!taiga) throw new PolicyError(503, "taiga_unavailable", "a policy in force cannot be replaced without checking Taiga for work in flight");
+      await requireNoActiveWork(c, taiga, projectId, version.payload);
+    }
     const reviewId = uuidv7();
     const activationId = uuidv7();
     await c.query("INSERT INTO policy_review (id, project_id, policy_id, decision, actor, reason) VALUES ($1,$2,$3,'approved',$4,$5)", [reviewId, projectId, a.policyId, by, a.reason]);

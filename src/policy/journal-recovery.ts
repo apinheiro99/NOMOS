@@ -1,26 +1,29 @@
-import { createHash } from "node:crypto";
 import type { TaigaClient } from "../client.js";
+import type { ActorRole } from "../workflow/actor.js";
+import type { EntityKind } from "../workflow/policy.js";
+import { BASE } from "../workflow/result.js";
+import { expectedOf, findComment, provenTransition, type Entry } from "./proof.js";
 import type { PolicyRuntime } from "./runtime.js";
 
-const BASE = { task: "tasks", userstory: "userstories" } as const;
-const STALE_MINUTES = 5;
-
-// A journal entry left at `intent` (the process died, or the outcome of the comment write was unknown) is settled from Taiga, never guessed:
-//   the exact comment it was about to write is in the history and the card is in the target status -> completed;
-//   the comment is there but the card did not move                                                   -> applied (the artifact is persisted, the status is not);
-//   the comment is not there                                                                         -> failed (the write did not happen).
-// Only entries older than STALE_MINUTES are touched, so a request still running is never settled under its own feet. A Taiga read that fails stops the pass.
-export async function reconcileJournal(runtime: PolicyRuntime, client: TaigaClient): Promise<{ completed: number; applied: number; failed: number }> {
+// A journal entry left at `intent` (the process died, or the outcome of the comment write was unknown) is settled from Taiga, never guessed, with the same proof
+// the merge recovery uses (see provenTransition), for a Task, a Story or an Epic:
+//   the comment is there and the actor's own move to the target status follows it, as the card's last change -> completed (or pending_effect while a merge authorization is owed);
+//   the comment is there but that move is not proven                                                         -> applied (the artifact is persisted, the status is not proven);
+//   the comment is not there                                                                                -> failed (the write did not happen).
+// `minutes` is how old an entry must be: 0 at startup (the process that wrote the entries is gone), a few minutes for the periodic pass, so a request still
+// running is never settled under its own feet. A Taiga read that fails stops the pass.
+export async function reconcileJournal(runtime: PolicyRuntime, client: TaigaClient, minutes = 5): Promise<{ completed: number; applied: number; failed: number }> {
   const result = { completed: 0, applied: 0, failed: 0 };
-  for (const j of await runtime.staleIntents(STALE_MINUTES)) {
-    const [entity, id] = j.target.split(":") as ["task" | "userstory", string];
-    const history = (await client.get(`/history/${entity}/${id}`)) as { id?: string; comment?: string; delete_comment_date?: string | null }[];
-    const found = history.find((h) => typeof h.comment === "string" && !h.delete_comment_date && createHash("sha256").update(h.comment).digest("hex") === j.ref);
+  for (const j of await runtime.staleIntents(minutes)) {
+    const [entity, id] = j.target.split(":") as [EntityKind, string];
+    const history = (await client.get(`/history/${entity}/${id}`)) as Entry[];
+    const found = findComment(history, j.ref);
     if (!found) { await runtime.finish(j.id, "failed", { problem: "the comment is not in the history: the write did not happen" }); result.failed += 1; continue; }
     const card = (await client.get(`/${BASE[entity]}/${id}`)) as { status?: number };
-    const moved = card.status === j.status;
-    await runtime.finish(j.id, moved ? "completed" : "applied", { comment_id: found.id, ...(moved ? {} : { problem: "the artifact is persisted but the status did not change" }) });
-    result[moved ? "completed" : "applied"] += 1;
+    const expected = j.actor && card.status === j.status ? await expectedOf(client, entity, j.project, j.actor as ActorRole, j.status) : undefined;
+    const proven = expected !== undefined && provenTransition(history, j.ref, expected) !== undefined;
+    await runtime.finish(j.id, proven ? "completed" : "applied", { comment_id: found.id, ...(proven ? {} : { problem: "the artifact is persisted but the status change is not proven" }) });
+    result[proven ? "completed" : "applied"] += 1;
   }
   return result;
 }

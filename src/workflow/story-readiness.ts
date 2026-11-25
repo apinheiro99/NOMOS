@@ -59,6 +59,7 @@ export async function promoteStoryWhenChildrenTerminal(client: TaigaClient, role
     read: () => client.get(`/userstories/${story.id}`) as Promise<{ status?: number; version: number; assigned_to?: number | null }>,
     validators: [(fresh) => (fresh.status === story.status ? null : "the Story is no longer In Progress")],
     write: async (fresh, w) => {
+      const wroteComment = !commentId;
       if (!commentId) {
         const template = latest(templates, nameFor("story_readiness_promotion"));
         const rendered = await renderGovernedArtifact(client, task.project!, {
@@ -67,11 +68,14 @@ export async function promoteStoryWhenChildrenTerminal(client: TaigaClient, role
           artifact: { type: template.type, triggering_task: String(task.ref), child_tasks: children.map((c) => ({ ref: String(c.ref), status: c.display })), promotion_reason: "Every child Task is Done or Cancelled, so the Story is mechanically ready for GPT Validation. No acceptance, test or commit evidence is claimed." },
         });
         if (!rendered.ok) throw new Error(rendered.problems[0]);
-        await w.comment("userstory", story.id, rendered.text);
+        await w.comment("userstory", story.id, rendered.text, fresh.version);
         commentId = [...orderedComments((await client.get(`/history/userstory/${story.id}`)) as HistoryItem[])].reverse().find((r) => r.comment === rendered.text.trimEnd())?.id;
         if (!commentId) throw new Error("the readiness comment is not in the history; the Story was not promoted");
       }
-      await w.patch("userstory", story.id, { status: target, ...(assignee.id !== undefined ? { assigned_to: assignee.id } : {}) }, fresh.version);
+      const body = { status: target, ...(assignee.id !== undefined ? { assigned_to: assignee.id } : {}) };
+      // A comment written now moved the version by one; a promotion whose comment already existed did not.
+      const next = wroteComment ? await w.patchAfterComment("userstory", story.id, body, fresh) : { updated: await w.patch("userstory", story.id, body, fresh.version) };
+      if ("conflict" in next) throw new Error(next.conflict);
     },
     verify: (after) => (after.status !== target ? "the Story status read back after the promotion is not GPT Validation" : assigneeProblem(after, assignee.id)),
   });

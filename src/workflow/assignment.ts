@@ -20,15 +20,22 @@ export function assigneeRole(entity: EntityKind, status: string): ActorRole | nu
 
 const projectionOn = (env: NodeJS.ProcessEnv) => ROLES.some((r) => env[accountVar(r)]);
 
+// THE account resolver: the Taiga user of `role` among the project's active members (by its configured account name). Used by the Assigned projection and by every
+// proof of who wrote in Taiga, so one rule decides who an actor is.
+export async function accountOf(client: TaigaClient, project: number, role: ActorRole, env: NodeJS.ProcessEnv = process.env): Promise<{ id?: number; problem?: string }> {
+  const username = env[accountVar(role)];
+  if (!username) return { problem: `${accountVar(role)} is not configured for the ${role} actor` };
+  const members = ((await client.getAll("/users", { project })) as { id: number; username?: string; is_active?: boolean }[]).filter((u) => u.username === username && u.is_active !== false);
+  if (members.length !== 1) return { problem: `${members.length ? "ambiguous" : "no active"} project member "${username}" for the ${role} actor (${members.length} found)` };
+  return { id: members[0].id };
+}
+
 export async function resolveAssignee(client: TaigaClient, project: number, entity: EntityKind, status: string, env: NodeJS.ProcessEnv = process.env): Promise<{ id?: number; problem?: string }> {
   if (!projectionOn(env)) return {};
   const role = assigneeRole(entity, status);
   if (!role) return {};
-  const username = env[accountVar(role)];
-  if (!username) return { problem: `Assigned projection is on but ${accountVar(role)} is not configured for the ${role} owner of "${status}"` };
-  const members = ((await client.getAll("/users", { project })) as { id: number; username?: string; is_active?: boolean }[]).filter((u) => u.username === username && u.is_active !== false);
-  if (members.length !== 1) return { problem: `${members.length ? "ambiguous" : "no active"} project member "${username}" for the ${role} owner of "${status}" (${members.length} found)` };
-  return { id: members[0].id };
+  const account = await accountOf(client, project, role, env);
+  return account.problem ? { problem: `Assigned projection is on but ${account.problem} (owner of "${status}")` } : account;
 }
 
 // Check of an already REREAD card (the boundary supplies it): the persisted assignee must be the projected one.

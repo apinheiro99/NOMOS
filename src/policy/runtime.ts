@@ -14,26 +14,28 @@ export interface MergeObligation {
   // Evidence and ownership: the exact approval comment (sha256 of its text), who approved, the journal entry, and the recipient chosen at that moment.
   journalId: string; actor: "gpt" | "claude" | "po"; recipient: "gpt" | "claude" | null; approvalHash: string;
 }
-export type PendingObligation = MergeObligation & { activationId: string; createdAt: Date };
+export type PendingObligation = MergeObligation & { activationId: string; createdAt: Date; envelope?: MergeEnvelope; approvalCommentId?: string };
 export type Settlement = { signed: MergeEnvelope; approvalCommentId: string } | { abandoned: true } | { review: true };
 
 export interface PolicyRuntime {
   forProject(taigaProjectId: number): Promise<ManagedPolicy | null>;
-  /** Takes the project's shared lock for a governed mutation and only THEN reads the policy, so the revision it decides on is the one that stays in force until release.
+  /** Takes the project's exclusive lock for a governed mutation and only THEN reads the policy, so the revision it decides on is the one that stays in force until release.
    *  Resolves to null for a legacy project; throws when the project is not safe or a policy change is running. */
   hold(taigaProjectId: number): Promise<{ managed: ManagedPolicy; release: () => Promise<void> } | null>;
-  /** `evidence` is what a later reconciliation looks for in Taiga: the sha256 of the comment about to be written and the status the write moves the card to. */
-  begin(m: ManagedPolicy, operation: string, target: string, evidence?: { ref: string; status: number }): Promise<string>;
-  /** Journal entries still at `intent` that carry evidence and are older than `minutes`, so a request still running is never reconciled under its own feet. */
-  staleIntents(minutes: number): Promise<{ id: string; target: string; ref: string; status: number }[]>;
+  /** `evidence` is what a later reconciliation looks for in Taiga: the sha256 of the comment about to be written, the status the write moves the card to, and who writes it. */
+  begin(m: ManagedPolicy, operation: string, target: string, evidence?: { ref: string; status: number; actor: string }): Promise<string>;
+  /** Journal entries of this instance still at `intent` that carry evidence and are older than `minutes` (0 = all: at startup nothing of ours is in flight), so a request still running is never reconciled under its own feet. */
+  staleIntents(minutes: number): Promise<{ id: string; project: number; target: string; ref: string; status: number; actor?: string }[]>;
+  /** `completed` stays `pending_effect` while a merge authorization is still owed for the entry; `completeEffect` closes it once the envelope is stored and delivered. */
   finish(journalId: string, phase: "applied" | "completed" | "failed", result: object): Promise<void>;
+  completeEffect(journalId: string): Promise<void>;
   /** Creates a project through the provisioning intent: idempotent by request key, bound (and its first policy stored) before it is reported. */
   provision(a: { principal: string; requestKey: string; requestHash: string }, create: Parameters<typeof provisionProject>[3]): ReturnType<typeof provisionProject>;
   openMergeObligation(m: ManagedPolicy, o: MergeObligation): Promise<void>;
   settleMergeObligation(authorizationId: string, outcome: Settlement): Promise<void>;
   /** The policy that was in force when the governed operation that wrote this artifact comment was authorized (via the mutation journal); undefined when none is recorded. */
   policyAt(taigaProjectId: number, artifactCommentId: string): Promise<Policy | undefined>;
-  /** The obligations whose outcome is still unknown. */
+  /** The obligations of this instance whose effect is not finished: the outcome is unknown (pending), or it is signed and its journal entry is still `pending_effect` (delivery not closed). */
   pendingMergeObligations(): Promise<PendingObligation[]>;
 }
 
@@ -77,7 +79,7 @@ export function createPolicyRuntime(pool: pg.Pool, baseUrl: string): PolicyRunti
       let acquired!: () => void;
       let failed!: (e: unknown) => void;
       const ready = new Promise<void>((resolve, reject) => { acquired = resolve; failed = reject; });
-      const done = withProjectLock(pool, first.projectId, async () => { acquired(); await gate; }, true).catch(failed);
+      const done = withProjectLock(pool, first.projectId, async () => { acquired(); await gate; }).catch(failed);
       await ready;
       try {
         const managed = await this.forProject(taigaProjectId);
@@ -87,15 +89,24 @@ export function createPolicyRuntime(pool: pg.Pool, baseUrl: string): PolicyRunti
     },
     async begin(m, operation, target, evidence) {
       const id = uuidv7();
-      await pool.query("INSERT INTO mutation_journal (id, project_id, activation_id, operation, target_key, phase, evidence_ref, result) VALUES ($1,$2,$3,$4,$5,'intent',$6,$7)", [id, m.projectId, m.activationId, operation, target, evidence?.ref ?? null, evidence ? JSON.stringify({ status: evidence.status }) : null]);
+      await pool.query("INSERT INTO mutation_journal (id, project_id, activation_id, operation, target_key, phase, evidence_ref, result) VALUES ($1,$2,$3,$4,$5,'intent',$6,$7)", [id, m.projectId, m.activationId, operation, target, evidence?.ref ?? null, evidence ? JSON.stringify({ status: evidence.status, actor: evidence.actor }) : null]);
       return id;
     },
     async staleIntents(minutes) {
-      const { rows } = await pool.query("SELECT id, target_key, evidence_ref, result FROM mutation_journal WHERE phase = 'intent' AND evidence_ref IS NOT NULL AND updated_at < now() - make_interval(mins => $1) ORDER BY created_at", [minutes]);
-      return rows.map((r) => ({ id: r.id, target: r.target_key, ref: r.evidence_ref, status: Number(r.result.status) }));
+      const { rows } = await pool.query(
+        `SELECT j.id, b.taiga_project_id, j.target_key, j.evidence_ref, j.result
+           FROM mutation_journal j JOIN project_binding b ON b.id = j.project_id JOIN taiga_instance i ON i.id = b.instance_id
+          WHERE i.base_url = $1 AND j.phase = 'intent' AND j.evidence_ref IS NOT NULL AND j.updated_at < now() - make_interval(mins => $2) ORDER BY j.created_at`, [baseUrl, minutes]);
+      return rows.map((r) => ({ id: r.id, project: Number(r.taiga_project_id), target: r.target_key, ref: r.evidence_ref, status: Number(r.result.status), actor: r.result.actor }));
     },
     async finish(journalId, phase, result) {
-      await pool.query("UPDATE mutation_journal SET phase = $2, result = $3, updated_at = now() WHERE id = $1", [journalId, phase, JSON.stringify(result)]);
+      await pool.query(
+        `UPDATE mutation_journal SET result = $3, updated_at = now(),
+                phase = CASE WHEN $2 = 'completed' AND EXISTS (SELECT 1 FROM merge_obligation WHERE journal_id = $1 AND state IN ('pending', 'review', 'signed')) THEN 'pending_effect' ELSE $2 END
+          WHERE id = $1`, [journalId, phase, JSON.stringify(result)]);
+    },
+    async completeEffect(journalId) {
+      await pool.query("UPDATE mutation_journal SET phase = 'completed', updated_at = now() WHERE id = $1 AND phase = 'pending_effect'", [journalId]);
     },
     async openMergeObligation(m, o) {
       await pool.query(
@@ -108,9 +119,12 @@ export function createPolicyRuntime(pool: pg.Pool, baseUrl: string): PolicyRunti
       const [state, from, envelope, commentId] =
         "signed" in outcome ? ["signed", "pending", JSON.stringify(outcome.signed), outcome.approvalCommentId]
         : "abandoned" in outcome ? ["abandoned", "pending", null, null] : ["review", "pending", null, null];
-      // Each outcome leaves exactly one earlier state, so a settled obligation can never be settled again.
+      // Each outcome leaves exactly one earlier state, so a settled obligation can never be settled again. An abandoned one means the Done never happened:
+      // its journal entry fails with it. A signed one leaves the journal at `pending_effect` until the delivery is closed (completeEffect).
       await pool.query(
-        "UPDATE merge_obligation SET state = $2, envelope = coalesce($4::jsonb, envelope), approval_comment_id = coalesce($5, approval_comment_id), updated_at = now() WHERE authorization_id = $1 AND state = $3",
+        `WITH s AS (UPDATE merge_obligation SET state = $2, envelope = coalesce($4::jsonb, envelope), approval_comment_id = coalesce($5, approval_comment_id), updated_at = now()
+                     WHERE authorization_id = $1 AND state = $3 RETURNING journal_id)
+         UPDATE mutation_journal SET phase = 'failed', updated_at = now() WHERE $2 = 'abandoned' AND id IN (SELECT journal_id FROM s) AND phase = 'pending_effect'`,
         [authorizationId, state, from, envelope, commentId]);
     },
     async policyAt(taigaProjectId, artifactCommentId) {
@@ -126,8 +140,12 @@ export function createPolicyRuntime(pool: pg.Pool, baseUrl: string): PolicyRunti
       return rows[0]?.payload;
     },
     async pendingMergeObligations() {
-      const { rows } = await pool.query("SELECT authorization_id, activation_id, journal_id, actor, recipient, approval_hash, entity, taiga_id, done_status, taiga_project, context, work_item, target_work_item, created_at FROM merge_obligation WHERE state = 'pending' ORDER BY created_at");
-      return rows.map((r) => ({ authorizationId: r.authorization_id, activationId: r.activation_id, journalId: r.journal_id, actor: r.actor, recipient: r.recipient, approvalHash: r.approval_hash, entity: r.entity, taigaId: Number(r.taiga_id), doneStatus: Number(r.done_status), taigaProject: Number(r.taiga_project), context: r.context, workItem: r.work_item, targetWorkItem: r.target_work_item, createdAt: r.created_at }));
+      const { rows } = await pool.query(
+        `SELECT m.authorization_id, m.activation_id, m.journal_id, m.actor, m.recipient, m.approval_hash, m.entity, m.taiga_id, m.done_status, m.taiga_project, m.context, m.work_item, m.target_work_item, m.created_at, m.envelope, m.approval_comment_id
+           FROM merge_obligation m JOIN project_binding b ON b.id = m.project_id JOIN taiga_instance i ON i.id = b.instance_id
+           JOIN mutation_journal j ON j.id = m.journal_id
+          WHERE i.base_url = $1 AND (m.state = 'pending' OR (m.state = 'signed' AND j.phase = 'pending_effect')) ORDER BY m.created_at`, [baseUrl]);
+      return rows.map((r) => ({ authorizationId: r.authorization_id, activationId: r.activation_id, journalId: r.journal_id, actor: r.actor, recipient: r.recipient, approvalHash: r.approval_hash, entity: r.entity, taigaId: Number(r.taiga_id), doneStatus: Number(r.done_status), taigaProject: Number(r.taiga_project), context: r.context, workItem: r.work_item, targetWorkItem: r.target_work_item, createdAt: r.created_at, ...(r.envelope ? { envelope: r.envelope, approvalCommentId: r.approval_comment_id } : {}) }));
     },
   };
 }

@@ -12,8 +12,12 @@ import type { EntityKind } from "./policy.js";
 
 // The only write capability a governed action receives.
 export interface Writer {
-  // An artifact comment on a card (the evidence a status write cites). Posted with the card's current version.
-  comment(entity: EntityKind, id: number, rendered: string): Promise<void>;
+  // An artifact comment on a card (the evidence a status write cites). Posted with `version` (the state the caller validated; Taiga refuses it if the card moved),
+  // or with the card's current version when the caller gives none.
+  comment(entity: EntityKind, id: number, rendered: string, version?: number): Promise<void>;
+  // The status write that follows a comment the caller wrote against `seen` (the validated state): the card must now be exactly that state plus the comment
+  // (version + 1, same status). Any other state means someone else wrote in between, and the write is NOT done: the newer state is never adopted.
+  patchAfterComment(entity: EntityKind, id: number, body: Record<string, unknown>, seen: { version: number; status?: number }): Promise<{ updated: unknown } | { conflict: string }>;
   // PATCH of a card. `version` only when the caller read it on purpose (lost-claim check); otherwise the version is read fresh.
   patch(entity: EntityKind, id: number, body: Record<string, unknown>, version?: number): Promise<unknown>;
   // A new card (the Sprint FINAL review Story and its Task).
@@ -24,10 +28,15 @@ export interface Writer {
 
 export function writerFor(client: TaigaClient): Writer {
   return {
-    comment: async (entity, id, rendered) => { await postUnsignedComment(client, entity, id, rendered); },
+    comment: async (entity, id, rendered, version) => { await postUnsignedComment(client, entity, id, rendered, version); },
     patch: async (entity, id, body, version) => {
       const v = version ?? ((await client.get(`/${BASE[entity]}/${id}`)) as { version: number }).version;
       return client.patch(`/${BASE[entity]}/${id}`, { ...body, version: v });
+    },
+    patchAfterComment: async (entity, id, body, seen) => {
+      const now = (await client.get(`/${BASE[entity]}/${id}`)) as { version: number; status?: number };
+      if (now.version !== seen.version + 1 || now.status !== seen.status) return { conflict: `the card changed after it was validated (version ${seen.version} -> ${now.version}, status ${String(seen.status)} -> ${String(now.status)})` };
+      return { updated: await client.patch(`/${BASE[entity]}/${id}`, { ...body, version: now.version }) };
     },
     create: (entity, body) => client.post(`/${BASE[entity]}`, body),
     wikiCreate: (body) => client.post("/wiki", body),

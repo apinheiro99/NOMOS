@@ -36,6 +36,7 @@ const handoff = (blueprintId: string) => ({
   deviations_from_blueprint: L("No deviations."), known_limits: L("None."), bug_hunt: L(), unrelated_findings: L("None."), prohibited_actions_not_performed: L("No push."), working_tree_notes: L("clean"),
 });
 
+const QUIET = { getAll: async () => [] } as never; // Taiga with nothing in flight
 let db: Awaited<ReturnType<typeof createTestDatabase>>;
 let pool: ReturnType<typeof createPool>;
 let runtime: ReturnType<typeof createPolicyRuntime>;
@@ -102,7 +103,7 @@ beforeEach(() => {
       if (body.comment !== undefined) comments.push({ id: `c${++n}`, comment: body.comment, created_at: new Date(1760000000000 + n * 1000).toISOString() });
       // eslint-disable-next-line @typescript-eslint/no-unused-vars -- rest-omit
       const { comment, version, ...rest } = body;
-      Object.assign(task, rest);
+      Object.assign(task, rest, { version: task.version + 1 }); // every accepted write moves the version, as Taiga does
       return ok({ ...task });
     }
     return ok({});
@@ -131,7 +132,7 @@ const gptOnly = () => JSON.parse(readFileSync(new URL("./fixtures/policy/gpt-onl
 
 async function activate(policy: Policy, expectedRevision: number | null) {
   const v = await propose(pool, binding, "gpt", policy);
-  await approve(pool, binding, "po", { policyId: v.policyId, expectedRevision, hash: v.hash, reason: "lab" });
+  await approve(pool, binding, "po", { policyId: v.policyId, expectedRevision, hash: v.hash, reason: "lab" }, QUIET);
 }
 
 test("a managed project with no active policy is refused, never sent to the legacy rules", async () => {
