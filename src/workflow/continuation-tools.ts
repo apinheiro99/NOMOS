@@ -21,11 +21,14 @@ export function registerContinuationTools(server: McpServer, client: TaigaClient
       const who = role === "po" ? actor : role;
       if (!who) return violation(["the PO must pass `actor` (gpt or claude)"]);
       if (actor && role !== "po" && actor !== role) return violation(["only the PO can list another actor's continuations"]);
-      let recovery: { recovered: number } | { error: string };
+      let recovery: { recovered: number; unresolved: number } | { error: string };
       try {
         const projects = project !== undefined ? [project] : ((await client.get("/projects")) as { id: number }[]).map((p) => p.id);
-        recovery = { recovered: 0 };
-        for (const p of projects) recovery.recovered += (await reconcileContinuations(client, p, runtime && ((id) => runtime.policyAt(p, id)))).recovered;
+        recovery = { recovered: 0, unresolved: 0 };
+        for (const p of projects) {
+          const r = await reconcileContinuations(client, p, runtime && ((id, writtenAt) => runtime.policyAt(p, id, writtenAt)));
+          recovery.recovered += r.recovered; recovery.unresolved += r.unresolved;
+        }
       } catch (e) { recovery = { error: (e as Error).message }; } // a Taiga read problem never hides what the ledger already holds
       const items = pendingContinuations(who, project);
       return text({ actor: who, count: items.length, continuations: items, recovery, note: NOT_AUTHORITY });
