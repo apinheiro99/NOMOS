@@ -60,8 +60,8 @@ test("rejects a status with no way out", () => {
 
 test("rejects policies that break an invariant", () => {
   const p = fresh();
-  task(p).states["done"].owner = "gpt";
+  task(p).transitions.push({ from: "to do", to: "done", allow: ["gpt"], artifact: "po_decision" });
   task(p).states["human decision"].owner = "claude";
-  assert.ok(codes(p).includes("invariant_terminal_owner"));
+  assert.ok(codes(p).includes("invariant_done_needs_approval"));
   assert.ok(codes(p).includes("invariant_human_decision_owner"));
 });
