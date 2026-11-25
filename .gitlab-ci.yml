@@ -96,8 +96,8 @@ default:
     - name: postgres:19
       alias: postgres
   variables:
-    POSTGRES_PASSWORD: ci-throwaway
-    DATABASE_URL: postgresql://postgres:ci-throwaway@postgres:5432/postgres
+    POSTGRES_HOST_AUTH_METHOD: trust
+    DATABASE_URL: postgresql://postgres@postgres:5432/postgres
   script:
     - npm run build
     - 'node scripts/ci-gate.ts "Tests: Policy DB" node scripts/run-tests.ts db'
