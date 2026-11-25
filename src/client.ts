@@ -1,6 +1,17 @@
 import { sanitizeResponse } from "./sanitize.js";
 import { safeApiError } from "./errors.js";
 
+export interface TaigaCredentials { url: string; username: string; password: string }
+
+// Credentials of the process (TAIGA_URL/USERNAME/PASSWORD) or, with a role, of that actor's own Taiga account (TAIGA_USERNAME_GPT, TAIGA_PASSWORD_GPT...).
+export function credentialsFromEnv(env: NodeJS.ProcessEnv = process.env, role?: string): TaigaCredentials {
+  const suffix = role ? `_${role.toUpperCase()}` : "";
+  const names = ["TAIGA_URL", `TAIGA_USERNAME${suffix}`, `TAIGA_PASSWORD${suffix}`] as const;
+  const [url, username, password] = names.map((n) => env[n]);
+  if (!url || !username || !password) throw new Error(`Missing required environment variables: ${names.join(", ")}`);
+  return { url, username, password };
+}
+
 export class TaigaClient {
   private baseUrl: string;
   private username: string;
@@ -9,17 +20,7 @@ export class TaigaClient {
   private refreshToken: string | null = null;
   private username_: string | null = null;
 
-  constructor() {
-    const url = process.env.TAIGA_URL;
-    const username = process.env.TAIGA_USERNAME;
-    const password = process.env.TAIGA_PASSWORD;
-
-    if (!url || !username || !password) {
-      throw new Error(
-        "Missing required environment variables: TAIGA_URL, TAIGA_USERNAME, TAIGA_PASSWORD",
-      );
-    }
-
+  constructor({ url, username, password }: TaigaCredentials = credentialsFromEnv()) {
     this.baseUrl = url.replace(/\/+$/, "");
     if (!this.baseUrl.includes("/api/v1")) {
       this.baseUrl += "/api/v1";

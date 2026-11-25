@@ -6,6 +6,8 @@ import { callerRole, type ActorRole, type WorkflowIdentity } from "./actor.js";
 import { validateArtifact } from "./artifacts.js";
 import { renderGovernedArtifact } from "./refs.js";
 import { analyse, orderedComments, UnsupportedArtifactError, type HistoryItem } from "./state.js";
+import { allowedActions, ownerOf } from "../policy/evaluator.js";
+import type { PolicyRuntime } from "../policy/runtime.js";
 import { actionsFor, DECISION_RESUME_STATUS, integrityMessage, norm, ownerRole, vocabulary } from "./policy.js";
 import { text, violation } from "./result.js";
 import { rejection } from "./reject.js";
@@ -39,7 +41,7 @@ async function guarded<T>(fn: () => Promise<T>) {
   }
 }
 
-export function registerWorkflowTools(server: McpServer, client: TaigaClient, identity: WorkflowIdentity, governance: GovernanceState): void {
+export function registerWorkflowTools(server: McpServer, client: TaigaClient, identity: WorkflowIdentity, governance: GovernanceState, runtime?: PolicyRuntime): void {
   const who = (author?: string) => { const a = identity.actor?.display ?? author; return { author: a, role: callerRole(identity, a) }; };
 
   server.tool(
@@ -79,7 +81,10 @@ export function registerWorkflowTools(server: McpServer, client: TaigaClient, id
         // Fail closed: no owner, no allowed actions. Read-only facts derived from the append-only history stay available.
         return text({ ...base, profile: "integrity_error", integrity: { ok: false, duplicated_status_names: vocab.broken, message: broken }, allowed_actions_for_caller: [], denied_for_caller: [], current_blueprint: an.blueprint ? { comment_id: an.blueprint.id, mode: an.blueprint.mode, round: an.blueprint.round } : null, current_handoff: an.handoff ? { comment_id: an.handoff.id } : null, request_evidence: { open_requests: an.requests.filter((q) => q.status === "open").map((q) => ({ request_id: q.requestId, from_actor: q.from, to_actor: q.to, blocking: q.blocking, comment_id: q.id })) }, note: "The project's workflow statuses are ambiguous, so the status-derived owner and the allowed actions are withheld. History remains readable. Fix the duplicated status names in Taiga." });
       }
-      const rows = actionsFor("task", w.role, current!, vocab.idByName.keys());
+      // The same source the transition uses: a managed project is described by its active policy, never by the legacy table.
+      const managed = runtime && task.project !== undefined ? await runtime.forProject(task.project) : null;
+      const rows = managed ? allowedActions(managed.policy, "task", w.role, current!, vocab.idByName.keys()) : actionsFor("task", w.role, current!, vocab.idByName.keys());
+      const owner = managed ? ownerOf(managed.policy, "task", current!) : ownerRole(current!);
       const open = an.openRequests;
       const requests = an.requests.map((q) => ({
         request_id: q.requestId, task_id: task.id, from_actor: q.from, to_actor: q.to, request_type: q.requestType,
@@ -91,7 +96,7 @@ export function registerWorkflowTools(server: McpServer, client: TaigaClient, id
       const inDecision = current === "human decision";
       const hd = inDecision ? humanDecisionView(an, task.is_blocked === true) : undefined;
       return text({
-        ...base, profile: "strict", current_status: current, owner_role: ownerRole(current!),
+        ...base, profile: "strict", current_status: current, owner_role: typeof owner === "string" ? owner : null, ...(managed ? { policy_revision: managed.revision } : {}),
         current_blueprint: an.blueprint ? { comment_id: an.blueprint.id, mode: an.blueprint.mode, round: an.blueprint.round } : null,
         current_validation_round: an.validationRound,
         model_telemetry: { ...an.modelCoverage, note: "model is non-blocking metadata: it never affects authorization or transition validity" },
