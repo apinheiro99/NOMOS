@@ -8,7 +8,7 @@ import { startAdminServer } from "./admin/server.js";
 import { createPool } from "./policy/repository.js";
 import { createPolicyRuntime, instanceBaseUrl } from "./policy/runtime.js";
 import { recoverMergeObligations } from "./policy/merge-recovery.js";
-import { loadSigner } from "./workflow/merge-auth.js";
+import { loadSigner, PRIVATE_KEY_ENV } from "./workflow/merge-auth.js";
 import { startHttpServer } from "./http.js";
 import { createDevReload, watchSources } from "./dev-reload.js";
 import { loadActorConfig } from "./workflow/actor.js";
@@ -26,7 +26,7 @@ async function main() {
     const pool = process.env.DATABASE_URL ? createPool(process.env.DATABASE_URL) : undefined;
     const runtime = pool ? createPolicyRuntime(pool, instanceBaseUrl()) : undefined;
     // A Done approved before a crash still owes its merge authorization: settle every stored obligation before serving.
-    if (runtime && clients?.get("po")) process.stderr.write(`merge obligations: ${JSON.stringify(await recoverMergeObligations(runtime, clients.get("po")!, loadSigner()))}\n`);
+    if (runtime && clients?.get("po") && process.env[PRIVATE_KEY_ENV]) process.stderr.write(`merge obligations: ${JSON.stringify(await recoverMergeObligations(runtime, clients.get("po")!, loadSigner()))}\n`);
     await startHttpServer(config, clients, actors, runtime);
     console.error(`taiga-mcp listening on http://${config.host}:${config.port}${config.path}`);
     if (pool) {
