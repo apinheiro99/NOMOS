@@ -53,8 +53,8 @@ function githubRepository(privateRoot: string): { key: string; repository: strin
   return { key, repository: values["TAIGA_GITHUB_REPOSITORY"] || `git@github.com:${owner}/${repo}.git` };
 }
 
-/** Publishes CI_COMMIT_SHA to GitHub main (lease bound to the observed remote main) and then its green tag. */
-export function publish(env: NodeJS.ProcessEnv, git: Git): { tag: string; lease: string } {
+/** Publishes CI_COMMIT_SHA to GitHub main and then its green tag. The push is a plain fast-forward: GitHub refuses it when main already holds a newer commit, so an older pipeline can never overwrite a newer publication. */
+export function publish(env: NodeJS.ProcessEnv, git: Git): { tag: string } {
   const sha = required(env, "CI_COMMIT_SHA");
   const tag = greenTag(required(env, "CI_PIPELINE_CREATED_AT"), required(env, "CI_PIPELINE_IID"));
   if (!GREEN_TAG.test(tag)) throw new Error("only a green pipeline tag is published");
@@ -66,11 +66,9 @@ export function publish(env: NodeJS.ProcessEnv, git: Git): { tag: string; lease:
 
   chmodSync(key, 0o600);
   const ssh = { GIT_SSH_COMMAND: `ssh -i '${key}' -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new` };
-  const observed = git(["ls-remote", repository, MAIN], ssh).split(/\s+/)[0] ?? "";
-  const lease = `${MAIN}:${observed}`;
-  git(["push", `--force-with-lease=${lease}`, repository, `${sha}:${MAIN}`], ssh);
+  git(["push", repository, `${sha}:${MAIN}`], ssh);
   git(["push", repository, `refs/tags/${tag}:refs/tags/${tag}`], ssh);
-  return { tag, lease };
+  return { tag };
 }
 
 const systemGit: Git = (args, env) => {
