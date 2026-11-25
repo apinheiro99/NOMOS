@@ -88,9 +88,16 @@ default:
     - npm run build
     - 'node scripts/ci-gate.ts "Tests: Core" node scripts/run-tests.ts core'
 
-# Needs the masked CI variable DATABASE_URL (a PostgreSQL server the runner can reach); each test file creates and drops its own taiga_test_ database.
+# The policy database tests run against their own PostgreSQL service container: no external server and no secret. The password below belongs
+# to a container that exists only for this job. Each test file creates and drops its own taiga_test_ database.
 "Tests: Policy DB":
   extends: .tests
+  services:
+    - name: postgres:19
+      alias: postgres
+  variables:
+    POSTGRES_PASSWORD: ci-throwaway
+    DATABASE_URL: postgresql://postgres:ci-throwaway@postgres:5432/postgres
   script:
     - npm run build
     - 'node scripts/ci-gate.ts "Tests: Policy DB" node scripts/run-tests.ts db'
