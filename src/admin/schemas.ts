@@ -30,3 +30,4 @@ export const simulateBody = z.object({
 export const pageQuery = z.object({ limit: z.coerce.number().int().min(1).max(200).default(50), offset: z.coerce.number().int().min(0).default(0) });
 export const proposalsQuery = pageQuery.extend({ state: z.enum(["pending", "approved", "rejected", "active"]).optional() });
 export const uuid = z.uuid();
+export const reconcileBody = z.object({ apply: z.boolean().default(false) }).strict();

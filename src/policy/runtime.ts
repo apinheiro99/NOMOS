@@ -11,8 +11,8 @@ export interface PolicyRuntime {
   finish(journalId: string, phase: "applied" | "completed" | "failed", result: object): Promise<void>;
 }
 
-// Only a project registered as `legacy` (or not registered at all) keeps the old rules. A project that is managed but has no active policy,
-// or is pending, drifting or inaccessible, is refused: a database or binding problem must never turn into the permissive path.
+// Only a project registered as `legacy` (or not registered at all) keeps the old rules. A project that is pending, drifting or inaccessible,
+// or managed without an active policy, is refused: a database or binding problem must never turn into the permissive path.
 const LEGACY = new Set(["legacy", "archived"]);
 
 // The Taiga instance is identified by its base URL (without a trailing slash), exactly as stored in taiga_instance.base_url.
@@ -35,7 +35,9 @@ export function createPolicyRuntime(pool: pg.Pool, baseUrl: string): PolicyRunti
       );
       const row = rows[0];
       if (!row || LEGACY.has(row.lifecycle)) return null;
-      if (!row.activation_id || !row.payload) throw new Error(`project ${taigaProjectId} is ${row.lifecycle} and has no active policy`);
+      // Drift, pending and inaccessible projects are blocked even when they still hold a policy: the mirror says Taiga no longer matches it.
+      if (row.lifecycle !== "managed") throw new Error(`project ${taigaProjectId} is ${row.lifecycle}: governed writes are blocked until the mirror reconciles it`);
+      if (!row.activation_id || !row.payload) throw new Error(`project ${taigaProjectId} is managed but has no active policy`);
       return { projectId: row.project_id, activationId: row.activation_id, revision: Number(row.revision), policy: row.payload };
     },
     async begin(m, operation, target) {

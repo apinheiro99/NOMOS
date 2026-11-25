@@ -6,7 +6,7 @@ import { ProjectLockBusyError } from "../policy/repository.js";
 import { PolicyError } from "../policy/service.js";
 import { uuidv7 } from "../identity.js";
 import { actorFromAuthorization, type ActorConfig } from "../workflow/actor.js";
-import { createAdminApi } from "./api.js";
+import { createAdminApi, type MirrorDeps } from "./api.js";
 import { DEV_RELOAD_PATH } from "../dev-reload.js";
 
 const PREFIX = "/admin/api/v1";
@@ -41,9 +41,10 @@ async function readJson(req: IncomingMessage): Promise<unknown> {
 }
 
 // The private admin listener, in the same process as /mcp but on its own port. Never reachable through the tunnel.
-export function startAdminServer(config: AdminConfig, pool: pg.Pool, actors: ActorConfig, devReload?: (res: ServerResponse) => void): Promise<Server> {
+export function startAdminServer(config: AdminConfig, pool: pg.Pool, actors: ActorConfig, extras: { devReload?: (res: ServerResponse) => void; mirror?: MirrorDeps } = {}): Promise<Server> {
+  const { devReload, mirror } = extras;
   if (!actors.tokens.has("po")) throw new Error("the admin API needs TAIGA_MCP_PO_TOKEN");
-  const api = createAdminApi(pool);
+  const api = createAdminApi(pool, mirror);
   const send = (res: ServerResponse, status: number, body: unknown, correlation: string) =>
     res.writeHead(status, { "content-type": "application/json; charset=utf-8", "cache-control": "no-store", "x-content-type-options": "nosniff", "x-correlation-id": correlation }).end(JSON.stringify(body));
 
