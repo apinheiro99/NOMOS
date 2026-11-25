@@ -57,30 +57,30 @@ default:
   script:
     - node scripts/ci-gate.ts "Type Check" pnpm run typecheck
 
-# The suite is split in three shards so the jobs run in parallel instead of one ~2 minute job.
+# The suite is split in three named groups so the jobs run in parallel instead of one ~2 minute job.
 .tests:
   extends:
     - .branch-push-only
     - .validation-summary
   stage: validate
 
-"Tests: Shard 1":
+"Tests: Workflow":
   extends: .tests
   script:
     - pnpm run build
-    - 'node scripts/ci-gate.ts "Tests: Shard 1" node --test --test-timeout=120000 --test-shard=1/3 "test/*.test.ts"'
+    - 'node scripts/ci-gate.ts "Tests: Workflow" node scripts/run-tests.ts workflow'
 
-"Tests: Shard 2":
+"Tests: Tools":
   extends: .tests
   script:
     - pnpm run build
-    - 'node scripts/ci-gate.ts "Tests: Shard 2" node --test --test-timeout=120000 --test-shard=2/3 "test/*.test.ts"'
+    - 'node scripts/ci-gate.ts "Tests: Tools" node scripts/run-tests.ts tools'
 
-"Tests: Shard 3":
+"Tests: Core":
   extends: .tests
   script:
     - pnpm run build
-    - 'node scripts/ci-gate.ts "Tests: Shard 3" node --test --test-timeout=120000 --test-shard=3/3 "test/*.test.ts"'
+    - 'node scripts/ci-gate.ts "Tests: Core" node scripts/run-tests.ts core'
 
 "Package Check":
   extends:
@@ -142,9 +142,9 @@ ci-tag-red:
   needs:
     - "Public Release Check"
     - "Type Check"
-    - "Tests: Shard 1"
-    - "Tests: Shard 2"
-    - "Tests: Shard 3"
+    - "Tests: Workflow"
+    - "Tests: Tools"
+    - "Tests: Core"
     - "Package Check"
     - "Release Check"
   script:
