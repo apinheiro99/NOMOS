@@ -79,13 +79,13 @@ validate = lint + typecheck + `node --test` ; PG integration (F2+) ; contract AP
 
 ### F1 — Oráculo legado + evaluator puro + fixture
 **Passos**
-1. `scripts/policy-oracle.ts` gera golden JSON do **código atual**: para cada entidade × (from,to) × papel (gpt, claude, po, anônimo, desconhecido) → `resolveTransition` + `ownerRole` + artefato + modo + override. Inclui wildcard `* → cancelled`, regra de Request, Epic/Story/Issue/Sprint e as 15 diferenças D-1..D-15 como **casos nomeados**. Golden revisado manualmente (evitar tautologia): comparar com a tabela 3A de `matrix-alignment.md`.
+1. `scripts/policy-oracle.ts` gera golden JSON do **código atual**: para cada entidade × (from,to) × papel (gpt, claude, po, anônimo, desconhecido) → `resolveTransition` + `ownerRole` + artefato + modo + override. Inclui wildcard `* → cancelled`, regra de Request, Epic/Story/Issue/Sprint e as diferenças D-1..D-15 (e a divergência intencional D-16 do seed) como **casos nomeados**. Golden revisado manualmente (evitar tautologia): comparar com a tabela 3A de `matrix-alignment.md`.
 2. `src/policy/{types,catalog,legacy-seed,validator,evaluator}.ts`: política como dado (JSON), `evaluate(snapshot, facts)` puro. Seed legado gerado do código (TASK_PAIRS etc.) sem wildcard ambíguo.
 3. Teste de paridade: evaluator(seed legado) == golden em 100% dos casos. **Sem autoridade dupla em runtime**: `policy.ts` continua sendo quem decide; o evaluator só roda em teste.
 4. Fixture GPT-only (JSON) que passa no evaluator: Task `To Do → In Progress → GPT Validation → Done` só com `gpt`; Human Decision só PO; sem despacho a Claude. Fixture v2 (matriz 64) separada, **só validada**, não ativa.
 5. Validador rejeita: estado inexistente, alias ambíguo, papel sem binding, artefato/guard desconhecido, duplicidade, transição impossível, ausência de saída, violação de invariante.
 **Testes:** oráculo, paridade, validador (casos negativos), GPT-only fixture, v2 fixture válida.
-**Aceite:** 100% paridade; D-1..D-15 documentados como casos; zero mudança de comportamento.
+**Aceite:** 100% paridade; D-1..D-16 documentados como casos; zero mudança de comportamento.
 **Commits:** `test(policy): legacy oracle`, `feat(policy): pure evaluator and legacy seed`, `test(policy): gpt-only and v2 fixtures`.
 
 ### F2 — Postgres + residente HTTP + API mínima

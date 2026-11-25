@@ -65,3 +65,12 @@ test("rejects policies that break an invariant", () => {
   assert.ok(codes(p).includes("invariant_done_needs_approval"));
   assert.ok(codes(p).includes("invariant_human_decision_owner"));
 });
+
+test("rejects a governed list that names a state the entity does not have, and a policy without one of the three entities", () => {
+  const p = fresh();
+  p.entities.userstory.governed = ["done", "limbo"];
+  assert.ok(codes(p).includes("unknown_state"));
+  const q = fresh();
+  delete (q.entities as Partial<Policy["entities"]>).epic;
+  assert.ok(codes(q).includes("missing_entity"));
+});

@@ -12,8 +12,12 @@ export function validatePolicy(policy: Policy): Violation[] {
   const add = (code: string, where: string, detail: string) => out.push({ code, where, detail });
   const roles = new Set(policy.roles);
 
+  // A missing entity would leave every decision about it to chance, so the three the workflow governs must all be present.
+  for (const entity of ["task", "userstory", "epic"]) if (!policy.entities[entity as keyof Policy["entities"]]) add("missing_entity", entity, `the policy has no rules for ${entity}`);
+
   for (const [entity, rules] of Object.entries(policy.entities)) {
     const names = Object.keys(rules.states);
+    if (rules.governed !== "all") for (const g of rules.governed) if (!(g in rules.states)) add("unknown_state", `${entity}.governed`, `"${g}" is listed as governed but is not a state of ${entity}`);
     for (const n of names) {
       if (norm(n) !== n) add("state_not_normalized", `${entity}.${n}`, "status keys are lower-case, trimmed, single-spaced");
       const owner = rules.states[n].owner;
