@@ -9,6 +9,7 @@ import type { WorkflowIdentity } from "./workflow/actor.js";
 import { authorShape } from "./workflow/tools.js";
 import { closureIntegrityFailure, resolveStatusRef, strictTransition } from "./workflow/transition.js";
 import type { PolicyRuntime } from "./policy/runtime.js";
+import { assertCataloged, enforce } from "./policy/pep.js";
 import { moveClosedStoryToTail } from "./workflow/story-order.js";
 import { closureFor, vocabulary, type EntityKind } from "./workflow/policy.js";
 import { BASE, STATUS_BASE, text, violation } from "./workflow/result.js";
@@ -212,8 +213,17 @@ async function closureBypass(client: TaigaClient, family: string, verb: string, 
 }
 
 // Wraps the generic Epic/Story/Task create/update tools: a governed project is validated before the handler runs.
-export function addGovernance(server: McpServer, client: TaigaClient, state: GovernanceState, identity: WorkflowIdentity = { mode: "syntactic", actor: null }): void {
-  const register = server.tool.bind(server) as unknown as ToolRegister<Args>;
+export function addGovernance(server: McpServer, client: TaigaClient, state: GovernanceState, identity: WorkflowIdentity = { mode: "syntactic", actor: null }, runtime?: PolicyRuntime): void {
+  const bound = server.tool.bind(server) as unknown as ToolRegister<Args>;
+  // The PEP is the outermost layer: it decides before any guard or handler, so a refusal changes nothing.
+  const register: ToolRegister<Args> = (name, description, schema, handler) => {
+    if (!runtime) return bound(name, description, schema, handler);
+    assertCataloged(name);
+    return bound(name, description, schema, async (args, extra) => {
+      const refusal = state.enabled ? await enforce(name, args as Record<string, unknown>, client, runtime) : null;
+      return refusal ? violation([refusal]) : handler(args, extra);
+    });
+  };
   (server as unknown as { tool: ToolRegister<Args> }).tool = (name, description, schema, rawHandler) => {
     const handler = withPromoteHygiene(client, state, name, withSprintReview(client, state, name, rawHandler));
     if (name === "taiga_tasks_bulk_update_taskboard_order") {

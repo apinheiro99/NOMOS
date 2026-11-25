@@ -41,7 +41,7 @@ export function createTaigaMcpServer(client: TaigaClient = new TaigaClient(), id
   addCompactParam(server);
   loadTemplates(); // fail closed at startup on a malformed template directory
   const governance = loadGovernance();
-  addGovernance(server, client, governance, identity);
+  addGovernance(server, client, governance, identity, runtime);
 
   // Register all tool modules
   registerProjectTools(server, client);
