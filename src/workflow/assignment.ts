@@ -1,5 +1,8 @@
 import type { TaigaClient } from "../client.js";
 import type { ActorRole } from "./actor.js";
+import { activeManaged } from "../policy/context.js";
+import { ownerOf } from "../policy/evaluator.js";
+import type { Policy } from "../policy/types.js";
 import { ownerRole, vocabulary, type EntityKind } from "./policy.js";
 import { mutate } from "./mutation.js";
 import { BASE, STATUS_BASE } from "./result.js";
@@ -11,10 +14,17 @@ import { BASE, STATUS_BASE } from "./result.js";
 const ROLES: ActorRole[] = ["gpt", "claude", "po"];
 const accountVar = (role: ActorRole) => `TAIGA_MCP_EXPECTED_ACCOUNT_${role.toUpperCase()}`;
 
-// Who owns a card in `status`. Task and Epic follow ownerRole; a User Story is orchestrated by GPT/PO even while In Progress (Claude only executes its Tasks).
-// Entering Request is always addressed to gpt (enforced by the transition), so ownerRole("request") is the addressee. Done/Cancelled: no projection.
-export function assigneeRole(entity: EntityKind, status: string): ActorRole | null {
-  if (entity === "userstory" && ["ready", "in progress", "gpt validation"].includes(status)) return "gpt";
+// Who owns a card in `status`. A managed project asks its own active policy (the owner of that status; a field slot has no fixed account, so no projection); a project
+// outside the engine keeps the legacy rule: Task and Epic follow ownerRole, and a User Story is orchestrated by GPT/PO even while In Progress (Claude only executes its
+// Tasks). In a policy the same fact is: a Story in Ready, In Progress or GPT Validation belongs to the owner of GPT Validation. Entering Request is always addressed to
+// gpt by the legacy transition; Done/Cancelled: no projection.
+const ORCHESTRATED = ["ready", "in progress", "gpt validation"];
+export function assigneeRole(entity: EntityKind, status: string, policy: Policy | undefined = activeManaged()?.policy): ActorRole | null {
+  if (policy) {
+    const slot = ownerOf(policy, entity, entity === "userstory" && ORCHESTRATED.includes(status) ? "gpt validation" : status);
+    return typeof slot === "string" ? slot : null;
+  }
+  if (entity === "userstory" && ORCHESTRATED.includes(status)) return "gpt";
   return ownerRole(status);
 }
 

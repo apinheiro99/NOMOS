@@ -1,5 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { legacySeed } from "../dist/policy/legacy-seed.js";
 import { assigneeProblem, assigneeRole, resolveAssignee } from "../dist/workflow/assignment.js";
 
 const accounts = { TAIGA_MCP_EXPECTED_ACCOUNT_GPT: "chatgpt", TAIGA_MCP_EXPECTED_ACCOUNT_CLAUDE: "claudecode", TAIGA_MCP_EXPECTED_ACCOUNT_PO: "po" };
@@ -17,6 +19,16 @@ test("the owner role per entity: Task and Epic follow the status owner, a Story 
   assert.equal(assigneeRole("userstory", "human decision"), "po");
   assert.equal(assigneeRole("epic", "gpt validation"), "gpt");
   assert.equal(assigneeRole("epic", "in progress"), "claude");
+});
+
+test("a managed project asks its policy: the legacy seed gives the legacy owners exactly, GPT-only gives GPT everywhere", () => {
+  const seed = legacySeed();
+  for (const entity of ["task", "userstory", "epic"] as const) {
+    for (const status of Object.keys(seed.entities[entity].states)) assert.equal(assigneeRole(entity, status, seed), assigneeRole(entity, status), `${entity} ${status}`);
+  }
+  const gptOnly = JSON.parse(readFileSync(new URL("./fixtures/policy/gpt-only.json", import.meta.url), "utf8"));
+  assert.equal(assigneeRole("task", "in progress", gptOnly), "gpt", "the legacy rule would say claude");
+  assert.equal(assigneeRole("userstory", "in progress", gptOnly), "gpt");
 });
 
 test("the Taiga user comes from the configured account and the active project members, never a stored id", async () => {
