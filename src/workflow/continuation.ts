@@ -37,7 +37,6 @@ export function foldContinuations(file = continuationFile()): Map<string, Folded
   return out;
 }
 
-const other = (p: Party): Party => (p === "gpt" ? "claude" : "gpt");
 const entityOf = (n: Notice) => (n.sprintId !== undefined ? { entity: "milestone" as const, ref: n.sprintId } : n.storyRef !== undefined ? { entity: "userstory" as const, ref: n.storyRef } : { entity: "task" as const, ref: n.taskRef! });
 
 // Deterministic identity from authoritative facts: the type, the entity and the persisted artifact (or authorization) that created the work.
@@ -71,12 +70,12 @@ export function pendingContinuations(actor: Party, project?: number, file = cont
 }
 
 // Persist the obligation BEFORE any dispatch, so a failed or offline Bridge cannot erase it; the persisted workflow mutation stays authoritative
-// even if recording fails (reported, never thrown). The next actor of a Bridge notice is always the other party.
+// even if recording fails (reported, never thrown). The next actor is the notice's stated recipient.
 export async function announce(n: Notice | null, source: string, env: NodeJS.ProcessEnv = process.env, authorization?: unknown): Promise<{ notification: NotifyOutcome; continuation?: { id: string; recorded: boolean } }> {
   let continuation: { id: string; recorded: boolean } | undefined;
   if (n) {
     const e = entityOf(n);
-    const c = continuationOf(n.type, other(n.from), n.from, e.entity, e.ref, n.projectId, source, { request_id: n.requestId, status: n.status });
+    const c = continuationOf(n.type, n.to, n.from, e.entity, e.ref, n.projectId, source, { request_id: n.requestId, status: n.status });
     try { recordContinuation(c); continuation = { id: c.id, recorded: true }; } catch { continuation = { id: c.id, recorded: false }; }
   }
   return { notification: await emitNotice(n, env, authorization), ...(continuation ? { continuation } : {}) };

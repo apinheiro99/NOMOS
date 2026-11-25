@@ -11,7 +11,7 @@ export type NoticeType =
   | "WORKFLOW_REQUEST_OPENED" | "WORKFLOW_REQUEST_ANSWERED" | "WORKFLOW_REQUEST_RESOLVED";
 export type Party = "gpt" | "claude";
 // Exactly one of taskRef / storyRef identifies the entity the pointer is about; every notice carries the owning projectId, because Taiga refs are project-scoped.
-export interface Notice { type: NoticeType; taskRef?: number; storyRef?: number; sprintId?: number; projectId?: number; from: Party; requestId?: string; status?: string }
+export interface Notice { type: NoticeType; to: Party; taskRef?: number; storyRef?: number; sprintId?: number; projectId?: number; from: Party; requestId?: string; status?: string }
 export type NotifyOutcome = "sent" | "failed" | "disabled" | "skipped";
 
 const NOTIFY_TIMEOUT_MS = 5000;
@@ -20,15 +20,18 @@ const NOTIFY_TIMEOUT_MS = 5000;
 export const AUTH_STDIN_ENV = "TAIGA_MCP_NOTIFY_AUTH_STDIN";
 export const authorizationTravels = (n: Notice | null, authorization: unknown, env: NodeJS.ProcessEnv = process.env): boolean =>
   n !== null && authorization !== undefined && (n.type === "TASK_DONE" || n.type === "STORY_DONE" || n.type === "SPRINT_CLOSED") && env[AUTH_STDIN_ENV] === "1";
+export const otherParty = (p: Party): Party => (p === "gpt" ? "claude" : "gpt");
 const isParty = (r: ActorRole | null | undefined): r is Party => r === "gpt" || r === "claude";
 
 // Which transition produces which notice. Cancel, blocker and PO overrides have no Bridge notice (the PO is not a Bridge party).
-export function noticeForTransition(role: ActorRole | null, from: string, to: string, taskRef: number | undefined, statusName: string, requestId?: string, entity: "task" | "userstory" = "task", projectId?: number): Notice | null {
+export function noticeForTransition(role: ActorRole | null, from: string, to: string, taskRef: number | undefined, statusName: string, requestId?: string, entity: "task" | "userstory" = "task", projectId?: number, recipient?: Party): Notice | null {
   if (!isParty(role) || taskRef === undefined) return null;
+  // The recipient is stated, never assumed: a managed project names it from its policy; otherwise it is the other party (the legacy rule).
+  const next = recipient ?? otherParty(role);
   // A Story only notifies its approved completion; every other Story move (start, handoff, correction) stays silent.
-  if (entity === "userstory") return from === "gpt validation" && to === "done" ? { type: "STORY_DONE", storyRef: taskRef, projectId, from: role, status: statusName } : null;
-  const base = { taskRef, projectId, from: role, status: statusName };
-  if (to === "request" && requestId) return { type: "WORKFLOW_REQUEST_OPENED", taskRef, projectId, from: role, requestId };
+  if (entity === "userstory") return from === "gpt validation" && to === "done" ? { type: "STORY_DONE", to: next, storyRef: taskRef, projectId, from: role, status: statusName } : null;
+  const base = { to: next, taskRef, projectId, from: role, status: statusName };
+  if (to === "request" && requestId) return { type: "WORKFLOW_REQUEST_OPENED", to: next, taskRef, projectId, from: role, requestId };
   if (to === "in progress" && from === "to do") return { type: "TASK_RELEASED", ...base };
   if (to === "in progress" && from === "gpt validation") return { type: "TASK_RETURNED_TO_IN_PROGRESS", ...base };
   if (to === "gpt validation") return { type: "TASK_MOVED_TO_GPT_VALIDATION", ...base };
@@ -59,6 +62,7 @@ export async function emitNotice(n: Notice | null, env: NodeJS.ProcessEnv = proc
   if (cmd === null) return "disabled";
   if (cmd === "invalid") return "failed";
   if (n === null) return "skipped";
+  if (n.to === n.from) return "skipped"; // the actor is its own recipient: nothing to point anyone at (the continuation is still recorded)
   const args = [...cmd.slice(1), "--type", n.type, ...entityArgs(n), "--from", n.from, ...(n.requestId ? ["--request", n.requestId] : []), ...(n.status ? ["--status", n.status] : [])];
   const clean: NodeJS.ProcessEnv = { PATH: env.PATH, HOME: env.HOME, LANG: env.LANG };
   for (const [k, v] of Object.entries(env)) if (k.startsWith("CLAUDE_BRIDGE_")) clean[k] = v;

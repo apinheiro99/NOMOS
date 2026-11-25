@@ -114,7 +114,7 @@ export function registerMilestoneTools(server: McpServer, client: TaigaClient, i
       if (problems.length || !signer || sprint.project === undefined) return refuse(`${problems.join("; ")}; nothing was changed`);
       const authorization = signMergeAuthorization(signer, merge_context as unknown as MergeContext, sprint.project, { kind: "sprint", ref: id }, `Project #${sprint.project}`);
       await createMergeReady(client, sprint.project, id, { envelope: authorization });
-      const notice: Notice | null = role === "gpt" ? { type: "SPRINT_CLOSED", sprintId: id, projectId: sprint.project, from: "gpt", status: "Merge ready; Sprint still open" } : null; // the PO is not a Bridge party
+      const notice: Notice | null = role === "gpt" ? { type: "SPRINT_CLOSED", to: "claude", sprintId: id, projectId: sprint.project, from: "gpt", status: "Merge ready; Sprint still open" } : null; // the PO is not a Bridge party
       const { notification, continuation } = await announce(notice, authorization.claims.authorization_id, process.env, authorization);
       const handoff = !authorizationTravels(notice, authorization) ? "not_attempted" : notification === "sent" ? "attempted_unconfirmed" : "failed";
       return { content: [{ type: "text" as const, text: JSON.stringify({ merge_ready: true, closed: false, notification, ...(continuation ? { continuation } : {}), merge_authorization: authorization, merge_authorization_handoff: handoff }) }] };
