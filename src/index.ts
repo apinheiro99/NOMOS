@@ -8,6 +8,7 @@ import { startAdminServer } from "./admin/server.js";
 import { createPool } from "./policy/repository.js";
 import { createPolicyRuntime, instanceBaseUrl } from "./policy/runtime.js";
 import { recoverMergeObligations } from "./policy/merge-recovery.js";
+import { reconcileJournal } from "./policy/journal-recovery.js";
 import { loadSigner, PRIVATE_KEY_ENV } from "./workflow/merge-auth.js";
 import { startHttpServer } from "./http.js";
 import { createDevReload, watchSources } from "./dev-reload.js";
@@ -28,6 +29,8 @@ async function main() {
     if (!process.env.DATABASE_URL) console.error("policy engine is OFF (TAIGA_MCP_POLICY_ENGINE=off): legacy rules only");
     const pool = process.env.DATABASE_URL ? createPool(process.env.DATABASE_URL) : undefined;
     const runtime = pool ? createPolicyRuntime(pool, instanceBaseUrl()) : undefined;
+    // A journal entry left at `intent` by a crash is settled from Taiga, so it never blocks an approval for ever.
+    if (runtime && clients?.get("po")) process.stderr.write(`mutation journal: ${JSON.stringify(await reconcileJournal(runtime, clients.get("po")!))}\n`);
     // A Done approved before a crash still owes its merge authorization: settle every stored obligation before serving.
     if (runtime && clients?.get("po") && process.env[PRIVATE_KEY_ENV]) process.stderr.write(`merge obligations: ${JSON.stringify(await recoverMergeObligations(runtime, clients.get("po")!, loadSigner()))}\n`);
     await startHttpServer(config, clients, actors, runtime);

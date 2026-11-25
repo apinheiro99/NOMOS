@@ -10,6 +10,8 @@ import { parseAdminConfig } from "../dist/config.js";
 import { migrate } from "../dist/policy/migrate.js";
 import { createPool } from "../dist/policy/repository.js";
 import { legacySeed } from "../dist/policy/legacy-seed.js";
+import { approve, propose } from "../dist/policy/service.js";
+import { createPolicyRuntime } from "../dist/policy/runtime.js";
 import { loadActorConfig } from "../dist/workflow/actor.js";
 import { connect, createTestDatabase } from "./support/pg.ts";
 
@@ -169,4 +171,28 @@ test("POST /reconcile is a dry run unless apply is true, and says so when there 
   assert.equal((await post({ apply: true })).applied, true);
   assert.equal((await pool.query("SELECT lifecycle FROM project_binding WHERE taiga_project_id = 501")).rows[0].lifecycle, "managed");
   s.close();
+});
+
+test("a merge obligation that could not be proven is listed, and only the PO closes it, as abandoned and audited", async () => {
+  process.env.TAIGA_MCP_CONTINUATION_FILE = "/nonexistent/none.jsonl"; // no pending continuations block the seed approval
+  const other = randomUUID();
+  const instance = (await pool.query("SELECT id FROM taiga_instance LIMIT 1")).rows[0].id;
+  await pool.query("INSERT INTO project_binding (id, instance_id, taiga_project_id, slug, name, lifecycle) VALUES ($1,$2,8,'ob','Ob','managed')", [other, instance]);
+  const v = await propose(pool, other, "gpt", legacySeed());
+  await approve(pool, other, "po", { policyId: v.policyId, expectedRevision: null, hash: v.hash, reason: "seed" });
+  const rt = createPolicyRuntime(pool, "http://t");
+  const managed = (await rt.forProject(8))!;
+  const authorizationId = randomUUID();
+  const sha = "a".repeat(40);
+  await rt.openMergeObligation(managed, { authorizationId, entity: "task", taigaId: 9, doneStatus: 5, taigaProject: 8, context: { repository: "r", source_branch: "s", target_branch: "t", source_sha: sha, target_sha: sha }, workItem: { kind: "task", ref: 9 }, targetWorkItem: "Story #1", journalId: await rt.begin(managed, "workflow_transition", "task:9"), actor: "gpt", recipient: "claude", approvalHash: "h" } as never);
+  await rt.settleMergeObligation(authorizationId, { review: true });
+  const listed = await call("GET", `/projects/${other}/obligations`);
+  assert.deepEqual(listed.json.items.map((o) => [(o as never as { authorization_id: string }).authorization_id, (o as never as { state: string }).state]), [[authorizationId, "review"]]);
+  const path = `/projects/${other}/obligations/${authorizationId}/resolve`;
+  for (const t of [TOKENS.TAIGA_MCP_GPT_TOKEN, TOKENS.TAIGA_MCP_CLAUDE_TOKEN]) assert.equal((await call("POST", path, { reason: "x" }, { authorization: `Bearer ${t}` })).status, 403);
+  assert.equal((await call("POST", path, { reason: "the Done was a manual one; no merge is owed" })).status, 200);
+  assert.equal((await pool.query("SELECT state FROM merge_obligation WHERE authorization_id = $1", [authorizationId])).rows[0].state, "abandoned");
+  assert.equal((await pool.query("SELECT count(*)::int AS n FROM policy_audit WHERE project_id = $1 AND operation = 'resolve_obligation'", [other])).rows[0].n, 1);
+  assert.equal((await call("POST", path, { reason: "again" })).status, 404, "a settled obligation cannot be resolved again");
+  delete process.env.TAIGA_MCP_CONTINUATION_FILE;
 });

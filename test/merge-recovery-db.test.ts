@@ -12,6 +12,7 @@ import { createHash } from "node:crypto";
 import { approve, propose } from "../dist/policy/service.js";
 import { legacySeed } from "../dist/policy/legacy-seed.js";
 import { recoverMergeObligations } from "../dist/policy/merge-recovery.js";
+import { reconcileJournal } from "../dist/policy/journal-recovery.js";
 import { loadSigner, publicKeyB64, verifyMergeAuthorization, type MergeEnvelope } from "../dist/workflow/merge-auth.js";
 import { connect, createTestDatabase } from "./support/pg.ts";
 
@@ -50,7 +51,11 @@ const obligation = (taigaId: number) => ({
   actor: "gpt" as const, recipient: "claude" as const, approvalHash: hash(APPROVAL(taigaId)),
 }) as MergeObligation;
 // Taiga as the recovery sees it: the card's status and its history (an approval comment may or may not be there).
-const taiga = (status: number, taigaId: number, approved: boolean) => ({ get: async (path: string) => path.startsWith("/history") ? (approved ? [{ id: "c9", comment: APPROVAL(taigaId) }] : [{ id: "c1", comment: "something else" }]) : { status } }) as never;
+const at = (s: number) => new Date(Date.now() + 60_000 + s * 1000).toISOString(); // after the obligation was opened
+const approvalEntry = (taigaId: number, extra = {}) => ({ id: "c9", comment: APPROVAL(taigaId), created_at: at(1), user: { pk: 1 }, ...extra });
+const doneEntry = (pk: number, s: number) => ({ id: "h2", created_at: at(s), user: { pk }, values_diff: { status: ["GPT Validation", "Done"] } });
+const taiga = (status: number, taigaId: number, approved: boolean) => ({ get: async (path: string) => path.startsWith("/history") ? (approved ? [approvalEntry(taigaId), doneEntry(1, 2)] : [{ id: "c1", comment: "something else" }]) : { status } }) as never;
+const withHistory = (taigaId: number, history: object[]) => ({ get: async (path: string) => path.startsWith("/history") ? history : { status: 5 } }) as never;
 const stateOf = async (id: string) => (await pool.query("SELECT state, envelope FROM merge_obligation WHERE authorization_id = $1", [id])).rows[0];
 
 test("a crash after the Done: recovery proves the approval and the Done, signs once with the stored id, and a second run changes nothing", async () => {
@@ -108,4 +113,36 @@ test("the same authorization id cannot be opened twice", async () => {
   const o = await open(104);
   await runtime.openMergeObligation(managed, o);
   await assert.rejects(runtime.openMergeObligation(managed, o), /duplicate key/);
+});
+
+test("a Done is not proven by an old approval alone: a later manual Done, a Done by someone else, a deleted approval and a re-moved card all go to review", async () => {
+  const cases: [number, object[]][] = [
+    [110, [approvalEntry(110), doneEntry(1, 2), doneEntry(1, 3)]], // approved, then the card was moved again after it
+    [111, [approvalEntry(111), doneEntry(2, 2)]], // the status change after the approval is by a different author
+    [112, [approvalEntry(112, { delete_comment_date: at(1) }), doneEntry(1, 2)]], // the approval comment was deleted
+    [113, [{ ...approvalEntry(113), created_at: new Date(Date.now() - 3_600_000).toISOString() }, doneEntry(1, 2)]], // older than the obligation
+  ];
+  for (const [id, history] of cases) {
+    const o = await open(id);
+    await runtime.openMergeObligation(managed, o);
+    assert.equal((await recoverMergeObligations(runtime, withHistory(id, history), signer)).signed, 0, `case ${id}`);
+    assert.equal((await stateOf(o.authorizationId)).state, "review", `case ${id}`);
+  }
+});
+
+test("a journal entry left at intent is settled from Taiga: completed, applied or failed, and a fresh one is left alone", async () => {
+  const ref = (text: string) => hash(text);
+  const mk = async (taigaId: number, text: string) => runtime.begin(managed, "workflow_transition", `task:${taigaId}`, { ref: ref(text), status: 5 });
+  const [done, half, lost, fresh] = [await mk(201, "A"), await mk(202, "B"), await mk(203, "C"), await mk(204, "D")];
+  await pool.query("UPDATE mutation_journal SET updated_at = now() - interval '10 minutes' WHERE id = ANY($1)", [[done, half, lost]]);
+  const world = { get: async (path: string) => {
+    const id = Number(path.split("/").at(-1));
+    if (path.startsWith("/history")) return id === 201 ? [{ id: "k1", comment: "A" }] : id === 202 ? [{ id: "k2", comment: "B" }] : [{ id: "k3", comment: "unrelated" }];
+    return { status: id === 201 ? 5 : 2 };
+  } } as never;
+  assert.deepEqual(await reconcileJournal(runtime, world), { completed: 1, applied: 1, failed: 1 });
+  const phase = async (id: string) => (await pool.query("SELECT phase, result FROM mutation_journal WHERE id = $1", [id])).rows[0];
+  assert.deepEqual([(await phase(done)).phase, (await phase(half)).phase, (await phase(lost)).phase, (await phase(fresh)).phase], ["completed", "applied", "failed", "intent"]);
+  assert.equal((await phase(done)).result.comment_id, "k1");
+  assert.deepEqual(await reconcileJournal(runtime, world), { completed: 0, applied: 0, failed: 0 }, "settled entries are not settled again");
 });

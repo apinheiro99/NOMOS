@@ -2,7 +2,7 @@ import type pg from "pg";
 import type { TaigaClient } from "../client.js";
 import { mirrorProjects } from "../policy/mirror.js";
 import { getProject, getVersion, listAudit, listProjects, listVersions, schemaVersion } from "../policy/queries.js";
-import { approve, PolicyError, propose, reject, rollback, simulate } from "../policy/service.js";
+import { approve, listObligations, PolicyError, propose, reject, resolveObligation, rollback, simulate } from "../policy/service.js";
 import type { Policy } from "../policy/types.js";
 import { norm } from "../workflow/policy.js";
 import { approveBody, pageQuery, proposalsQuery, reconcileBody, proposeBody, rejectBody, rollbackBody, simulateBody, uuid } from "./schemas.js";
@@ -41,6 +41,8 @@ route("POST", "/projects/:id/proposals/:revision/approve", async (db, p, r, mirr
   return ok(await approve(db, projectId(p), PO, { policyId, ...approveBody.parse(r.body) }));
 });
 route("POST", "/projects/:id/proposals/:revision/reject", async (db, p, r) => ok(await reject(db, projectId(p), PO, { policyId: await policyIdOf(db, p), ...rejectBody.parse(r.body) })));
+route("GET", "/projects/:id/obligations", async (db, p) => ok({ items: await listObligations(db, projectId(p)) }));
+route("POST", "/projects/:id/obligations/:id/resolve", async (db, p, r) => ok(await resolveObligation(db, projectId(p), PO, { authorizationId: uuid.parse(p[1]), ...rejectBody.parse(r.body) })));
 route("POST", "/reconcile", async (db, _p, r, mirror) => {
   if (!mirror) throw new PolicyError(503, "mirror_unavailable", "this process has no Taiga session to mirror from");
   return ok(await mirrorProjects(db, mirror.client, mirror.baseUrl, { apply: reconcileBody.parse(r.body ?? {}).apply }));
