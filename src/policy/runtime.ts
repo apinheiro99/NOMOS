@@ -11,7 +11,11 @@ export interface ManagedPolicy { projectId: string; activationId: string; revisi
 export interface MergeObligation {
   authorizationId: string; entity: "task" | "userstory"; taigaId: number; doneStatus: number; taigaProject: number;
   context: MergeContext; workItem: WorkItemIdentity; targetWorkItem: string;
+  // Evidence and ownership: the exact approval comment (sha256 of its text), who approved, the journal entry, and the recipient chosen at that moment.
+  journalId: string; actor: "gpt" | "claude" | "po"; recipient: "gpt" | "claude" | null; approvalHash: string;
 }
+export type PendingObligation = MergeObligation & { activationId: string };
+export type Settlement = { signed: MergeEnvelope; approvalCommentId: string } | { abandoned: true } | { review: true };
 
 export interface PolicyRuntime {
   forProject(taigaProjectId: number): Promise<ManagedPolicy | null>;
@@ -22,8 +26,9 @@ export interface PolicyRuntime {
   /** Creates a project through the provisioning intent: idempotent by request key, bound (and its first policy stored) before it is reported. */
   provision(a: { principal: string; requestKey: string; requestHash: string }, create: Parameters<typeof provisionProject>[3]): ReturnType<typeof provisionProject>;
   openMergeObligation(m: ManagedPolicy, o: MergeObligation): Promise<void>;
-  settleMergeObligation(authorizationId: string, outcome: { signed: MergeEnvelope } | { abandoned: true }): Promise<void>;
-  pendingMergeObligations(): Promise<MergeObligation[]>;
+  settleMergeObligation(authorizationId: string, outcome: Settlement): Promise<void>;
+  /** The obligations whose outcome is still unknown. */
+  pendingMergeObligations(): Promise<PendingObligation[]>;
 }
 
 // Only a project explicitly registered as `legacy` keeps the old rules. A project with no binding (not mirrored yet, or the wrong instance), pending,
@@ -80,18 +85,23 @@ export function createPolicyRuntime(pool: pg.Pool, baseUrl: string): PolicyRunti
     },
     async openMergeObligation(m, o) {
       await pool.query(
-        `INSERT INTO merge_obligation (authorization_id, project_id, entity, taiga_id, done_status, taiga_project, context, work_item, target_work_item, state)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'pending')`,
-        [o.authorizationId, m.projectId, o.entity, o.taigaId, o.doneStatus, o.taigaProject, JSON.stringify(o.context), JSON.stringify(o.workItem), o.targetWorkItem],
+        `INSERT INTO merge_obligation (authorization_id, project_id, activation_id, journal_id, actor, recipient, approval_hash, entity, taiga_id, done_status, taiga_project, context, work_item, target_work_item, state)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,'pending')`,
+        [o.authorizationId, m.projectId, m.activationId, o.journalId, o.actor, o.recipient, o.approvalHash, o.entity, o.taigaId, o.doneStatus, o.taigaProject, JSON.stringify(o.context), JSON.stringify(o.workItem), o.targetWorkItem],
       );
     },
     async settleMergeObligation(authorizationId, outcome) {
-      const signed = "signed" in outcome;
-      await pool.query("UPDATE merge_obligation SET state = $2, envelope = $3, updated_at = now() WHERE authorization_id = $1 AND state = 'pending'", [authorizationId, signed ? "signed" : "abandoned", signed ? JSON.stringify(outcome.signed) : null]);
+      const [state, from, envelope, commentId] =
+        "signed" in outcome ? ["signed", "pending", JSON.stringify(outcome.signed), outcome.approvalCommentId]
+        : "abandoned" in outcome ? ["abandoned", "pending", null, null] : ["review", "pending", null, null];
+      // Each outcome leaves exactly one earlier state, so a settled obligation can never be settled again.
+      await pool.query(
+        "UPDATE merge_obligation SET state = $2, envelope = coalesce($4::jsonb, envelope), approval_comment_id = coalesce($5, approval_comment_id), updated_at = now() WHERE authorization_id = $1 AND state = $3",
+        [authorizationId, state, from, envelope, commentId]);
     },
     async pendingMergeObligations() {
-      const { rows } = await pool.query("SELECT authorization_id, entity, taiga_id, done_status, taiga_project, context, work_item, target_work_item FROM merge_obligation WHERE state = 'pending' ORDER BY created_at");
-      return rows.map((r) => ({ authorizationId: r.authorization_id, entity: r.entity, taigaId: Number(r.taiga_id), doneStatus: Number(r.done_status), taigaProject: Number(r.taiga_project), context: r.context, workItem: r.work_item, targetWorkItem: r.target_work_item }));
+      const { rows } = await pool.query("SELECT authorization_id, activation_id, journal_id, actor, recipient, approval_hash, entity, taiga_id, done_status, taiga_project, context, work_item, target_work_item FROM merge_obligation WHERE state = 'pending' ORDER BY created_at");
+      return rows.map((r) => ({ authorizationId: r.authorization_id, activationId: r.activation_id, journalId: r.journal_id, actor: r.actor, recipient: r.recipient, approvalHash: r.approval_hash, entity: r.entity, taigaId: Number(r.taiga_id), doneStatus: Number(r.done_status), taigaProject: Number(r.taiga_project), context: r.context, workItem: r.work_item, targetWorkItem: r.target_work_item }));
     },
   };
 }

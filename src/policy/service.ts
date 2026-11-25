@@ -101,7 +101,7 @@ async function requireNoPendingWork(c: pg.PoolClient, projectId: string): Promis
   const { rows } = await c.query<{ taiga_project_id: string; journal: string; merges: string }>(
     `SELECT b.taiga_project_id,
             (SELECT count(*) FROM mutation_journal WHERE project_id = b.id AND phase = 'intent') AS journal,
-            (SELECT count(*) FROM merge_obligation WHERE project_id = b.id AND state = 'pending') AS merges
+            (SELECT count(*) FROM merge_obligation WHERE project_id = b.id AND state IN ('pending', 'review')) AS merges
        FROM project_binding b WHERE b.id = $1`, [projectId]);
   const row = rows[0];
   const continuations = (["gpt", "claude"] as const).flatMap((party) => pendingContinuations(party, Number(row.taiga_project_id))).length;

@@ -1,6 +1,9 @@
 import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
+import { mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { migrate } from "../dist/policy/migrate.js";
 import { createPool, ProjectLockBusyError, withProjectLock } from "../dist/policy/repository.js";
@@ -15,6 +18,7 @@ let pool: ReturnType<typeof createPool>;
 const INSTANCE = randomUUID();
 let taigaId = 200;
 before(async () => {
+  process.env.TAIGA_MCP_CONTINUATION_FILE = join(mkdtempSync(join(tmpdir(), "hold-")), "c.jsonl");
   db = await createTestDatabase();
   const c = await connect(db.url);
   await migrate(c, fileURLToPath(new URL("../db/migrations", import.meta.url)));
@@ -22,7 +26,7 @@ before(async () => {
   pool = createPool(db.url, 5);
   await pool.query("INSERT INTO taiga_instance (id, instance_key, base_url) VALUES ($1,'lab','http://t')", [INSTANCE]);
 });
-after(async () => { await pool.end(); await db.drop(); });
+after(async () => { delete process.env.TAIGA_MCP_CONTINUATION_FILE; await pool.end(); await db.drop(); });
 
 async function managed() {
   const id = randomUUID();
@@ -72,6 +76,6 @@ test("approval is refused while a journal entry or a merge authorization is unfi
   const journalId = await runtime.begin(m, "workflow_transition", "task:1");
   await assert.rejects(approve(pool, p.id, "po", ask), (e: PolicyError) => e.code === "pending_work" && /"journal_intents":1/.test(e.message));
   await runtime.finish(journalId, "completed", {});
-  await runtime.openMergeObligation(m, { authorizationId: randomUUID(), entity: "task", taigaId: 1, doneStatus: 5, taigaProject: p.taiga, context: { repository: "r", source_branch: "b", target_branch: "t", source_sha: "a".repeat(40), target_sha: "a".repeat(40) }, workItem: { kind: "task", ref: 1 }, targetWorkItem: "Story #1" });
+  await runtime.openMergeObligation(m, { authorizationId: randomUUID(), journalId: await runtime.begin(m, "workflow_transition", "task:2"), actor: "gpt", recipient: "claude", approvalHash: "h", entity: "task", taigaId: 1, doneStatus: 5, taigaProject: p.taiga, context: { repository: "r", source_branch: "b", target_branch: "t", source_sha: "a".repeat(40), target_sha: "a".repeat(40) }, workItem: { kind: "task", ref: 1 }, targetWorkItem: "Story #1" });
   await assert.rejects(approve(pool, p.id, "po", ask), (e: PolicyError) => e.code === "pending_work" && /"merge_obligations":1/.test(e.message));
 });
