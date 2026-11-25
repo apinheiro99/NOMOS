@@ -1,4 +1,4 @@
-import { ARTIFACT_TYPES } from "./catalog.js";
+import { ARTIFACT_TYPES, DECIDED_BY_TRANSITIONS } from "./catalog.js";
 import { OPERATIONS } from "./operations.js";
 import { norm } from "../workflow/policy.js";
 import type { Policy } from "./types.js";
@@ -14,9 +14,9 @@ export function validatePolicy(policy: Policy): Violation[] {
   const roles = new Set(policy.roles);
 
   // Operation permissions name real, non-workflow writes and bound roles; one that cannot be called by anybody is a mistake, not a rule.
-  const permitted = new Set(OPERATIONS.filter((o) => o.access === "write" && o.rule !== "workflow").map((o) => o.id));
+  const permitted = new Set(OPERATIONS.filter((o) => o.access === "write" && o.id !== DECIDED_BY_TRANSITIONS).map((o) => o.id));
   for (const [id, allow] of Object.entries(policy.operations ?? {})) {
-    if (!permitted.has(id)) add("unknown_operation", `operations.${id}`, "not a cataloged write operation that a policy permission can govern");
+    if (!permitted.has(id)) add("unknown_operation", `operations.${id}`, "not a cataloged write operation that an operation permission governs");
     if (!allow.length) add("no_role", `operations.${id}`, "no role may call this operation");
     for (const r of allow) if (!roles.has(r)) add("role_without_binding", `operations.${id}`, `role "${r}" has no binding`);
   }

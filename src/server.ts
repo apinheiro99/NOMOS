@@ -8,6 +8,7 @@ import { registerAssignmentTools } from "./workflow/assignment-tools.js";
 import { registerContinuationTools } from "./workflow/continuation-tools.js";
 import { loadTemplates } from "./workflow/templates.js";
 import type { PolicyRuntime } from "./policy/runtime.js";
+import { scopedGovernance } from "./policy/pep.js";
 
 import { registerProjectTools } from "./tools/projects.js";
 import { registerEpicTools } from "./tools/epics.js";
@@ -40,7 +41,7 @@ export function createTaigaMcpServer(client: TaigaClient = new TaigaClient(), id
   addFieldsParam(server);
   addCompactParam(server);
   loadTemplates(); // fail closed at startup on a malformed template directory
-  const governance = loadGovernance();
+  const governance = scopedGovernance(loadGovernance());
   addGovernance(server, client, governance, identity, runtime);
 
   // Register all tool modules

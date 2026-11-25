@@ -19,8 +19,9 @@ export type Settlement = { signed: MergeEnvelope; approvalCommentId: string } | 
 
 export interface PolicyRuntime {
   forProject(taigaProjectId: number): Promise<ManagedPolicy | null>;
-  /** Holds the project's shared lock for a governed mutation. Resolves to the release function, or null for a legacy project. Throws when the project is not safe or a policy change is running. */
-  hold(taigaProjectId: number): Promise<(() => Promise<void>) | null>;
+  /** Takes the project's shared lock for a governed mutation and only THEN reads the policy, so the revision it decides on is the one that stays in force until release.
+   *  Resolves to null for a legacy project; throws when the project is not safe or a policy change is running. */
+  hold(taigaProjectId: number): Promise<{ managed: ManagedPolicy; release: () => Promise<void> } | null>;
   begin(m: ManagedPolicy, operation: string, target: string): Promise<string>;
   finish(journalId: string, phase: "applied" | "completed" | "failed", result: object): Promise<void>;
   /** Creates a project through the provisioning intent: idempotent by request key, bound (and its first policy stored) before it is reported. */
@@ -63,17 +64,21 @@ export function createPolicyRuntime(pool: pg.Pool, baseUrl: string): PolicyRunti
     },
     provision: (a, create) => provisionProject(pool, baseUrl, a, create),
     async hold(taigaProjectId) {
-      const managed = await this.forProject(taigaProjectId);
-      if (!managed) return null;
+      const first = await this.forProject(taigaProjectId); // names the project (and refuses an unsafe one); its policy is read again under the lock
+      if (!first) return null;
       // withProjectLock wraps a callback, so the callback parks on `gate` until the caller releases.
       let release!: () => void;
       const gate = new Promise<void>((resolve) => { release = resolve; });
       let acquired!: () => void;
       let failed!: (e: unknown) => void;
       const ready = new Promise<void>((resolve, reject) => { acquired = resolve; failed = reject; });
-      const done = withProjectLock(pool, managed.projectId, async () => { acquired(); await gate; }, true).catch(failed);
+      const done = withProjectLock(pool, first.projectId, async () => { acquired(); await gate; }, true).catch(failed);
       await ready;
-      return async () => { release(); await done; };
+      try {
+        const managed = await this.forProject(taigaProjectId);
+        if (!managed) throw new Error(`project ${taigaProjectId} changed lifecycle while its lock was being taken`);
+        return { managed, release: async () => { release(); await done; } };
+      } catch (e) { release(); await done; throw e; }
     },
     async begin(m, operation, target) {
       const id = uuidv7();

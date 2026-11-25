@@ -10,6 +10,7 @@ import { createPool, ProjectLockBusyError, withProjectLock } from "../dist/polic
 import { createPolicyRuntime } from "../dist/policy/runtime.js";
 import { approve, propose, reject, PolicyError } from "../dist/policy/service.js";
 import { legacySeed } from "../dist/policy/legacy-seed.js";
+import { createAdminApi } from "../dist/admin/api.js";
 import { connect, createTestDatabase } from "./support/pg.ts";
 
 // Audit F2 #8-#10: a governed mutation and a policy change share ONE project lock; approval refuses unfinished work and a rejected proposal.
@@ -46,7 +47,7 @@ test("a mutation in flight blocks a policy change, and a policy change blocks a 
   const runtime = createPolicyRuntime(pool, "http://t");
   const p = await managed();
   const { ask } = await change(p.id, 1);
-  const release = (await runtime.hold(p.taiga))!;
+  const { release } = (await runtime.hold(p.taiga))!;
   await assert.rejects(approve(pool, p.id, "po", ask), ProjectLockBusyError);
   await release();
   const during = withProjectLock(pool, p.id, async () => runtime.hold(p.taiga));
@@ -58,7 +59,7 @@ test("mutations of one project run together (the lock is shared)", async () => {
   const runtime = createPolicyRuntime(pool, "http://t");
   const p = await managed();
   const [a, b] = await Promise.all([runtime.hold(p.taiga), runtime.hold(p.taiga)]);
-  await a!(); await b!();
+  await a!.release(); await b!.release();
 });
 
 test("a rejected proposal can never be approved afterwards", async () => {
@@ -78,4 +79,16 @@ test("approval is refused while a journal entry or a merge authorization is unfi
   await runtime.finish(journalId, "completed", {});
   await runtime.openMergeObligation(m, { authorizationId: randomUUID(), journalId: await runtime.begin(m, "workflow_transition", "task:2"), actor: "gpt", recipient: "claude", approvalHash: "h", entity: "task", taigaId: 1, doneStatus: 5, taigaProject: p.taiga, context: { repository: "r", source_branch: "b", target_branch: "t", source_sha: "a".repeat(40), target_sha: "a".repeat(40) }, workItem: { kind: "task", ref: 1 }, targetWorkItem: "Story #1" });
   await assert.rejects(approve(pool, p.id, "po", ask), (e: PolicyError) => e.code === "pending_work" && /"merge_obligations":1/.test(e.message));
+});
+
+test("the admin approval looks at the open cards in Taiga: one in a status the new policy lacks refuses it, naming the card", async () => {
+  const p = await managed();
+  const { v, ask } = await change(p.id, 1);
+  const cards = (names: Record<string, string>) => ({ get: async (path: string) => [{ ref: 9, status_extra_info: { name: names[path.slice(1)] ?? "To Do" } }] }) as never;
+  const route = `/projects/${p.id}/proposals/${v.revision}/approve`;
+  const body = { expectedRevision: 1, hash: ask.hash, reason: "r" };
+  const stray = createAdminApi(pool, { client: cards({ epics: "Brainstorming", tasks: "Limbo", userstories: "Ready" }), baseUrl: "http://t" });
+  await assert.rejects(stray({ method: "POST", path: route, query: new URLSearchParams(), body }), (e: PolicyError) => e.code === "cards_in_unknown_state" && /task #9/.test(e.message));
+  const fine = createAdminApi(pool, { client: cards({ epics: "New", tasks: "To Do", userstories: "Ready" }), baseUrl: "http://t" });
+  assert.equal((await fine({ method: "POST", path: route, query: new URLSearchParams(), body })).status, 200);
 });

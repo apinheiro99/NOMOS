@@ -96,6 +96,11 @@
    "claude",
    "po"
   ],
+  "taiga_human_decision_resolve": [
+   "gpt",
+   "claude",
+   "po"
+  ],
   "taiga_issue_comment_create": [
    "gpt",
    "claude",
@@ -236,12 +241,27 @@
    "claude",
    "po"
   ],
+  "taiga_milestones_close": [
+   "gpt",
+   "claude",
+   "po"
+  ],
+  "taiga_milestones_confirm_merge": [
+   "gpt",
+   "claude",
+   "po"
+  ],
   "taiga_milestones_create": [
    "gpt",
    "claude",
    "po"
   ],
   "taiga_milestones_delete": [
+   "gpt",
+   "claude",
+   "po"
+  ],
+  "taiga_milestones_prepare_close": [
    "gpt",
    "claude",
    "po"
@@ -682,6 +702,16 @@
    "po"
   ],
   "taiga_wiki_watch": [
+   "gpt",
+   "claude",
+   "po"
+  ],
+  "taiga_workflow_request_answer": [
+   "gpt",
+   "claude",
+   "po"
+  ],
+  "taiga_workflow_request_create": [
    "gpt",
    "claude",
    "po"

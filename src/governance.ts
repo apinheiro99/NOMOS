@@ -9,7 +9,7 @@ import type { WorkflowIdentity } from "./workflow/actor.js";
 import { authorShape } from "./workflow/tools.js";
 import { closureIntegrityFailure, resolveStatusRef, strictTransition } from "./workflow/transition.js";
 import type { PolicyRuntime } from "./policy/runtime.js";
-import { assertCataloged, enforce } from "./policy/pep.js";
+import { assertCataloged, guard, underGuard } from "./policy/pep.js";
 import { moveClosedStoryToTail } from "./workflow/story-order.js";
 import { closureFor, vocabulary, type EntityKind } from "./workflow/policy.js";
 import { BASE, STATUS_BASE, text, violation } from "./workflow/result.js";
@@ -220,9 +220,8 @@ export function addGovernance(server: McpServer, client: TaigaClient, state: Gov
     if (!runtime) return bound(name, description, schema, handler);
     assertCataloged(name);
     return bound(name, description, schema, async (args, extra) => {
-      // Not tied to the governance switch: turning governance off frees legacy projects, never a project the policy engine manages.
-      const refusal = await enforce(name, args as Record<string, unknown>, client, runtime, identity.actor?.role ?? null);
-      return refusal ? violation([refusal]) : handler(args, extra);
+      const g = await guard(name, args as Record<string, unknown>, client, runtime, identity.actor?.role ?? null);
+      return "refusal" in g ? violation([g.refusal]) : underGuard(g, () => handler(args, extra));
     });
   };
   (server as unknown as { tool: ToolRegister<Args> }).tool = (name, description, schema, rawHandler) => {
@@ -322,7 +321,7 @@ export function registerGovernanceTools(server: McpServer, client: TaigaClient, 
       const hasComment = rawComment !== undefined && rawComment.trim() !== "";
       const comment = hasComment ? signComment(rawComment!, author) : undefined;
       const base = BASE[entity];
-      const governed = state.enabled || await runtime?.forProject(((await client.get(`/${base}/${id}`)) as { project: number }).project).then((m) => m !== null, () => true) === true;
+      const governed = state.enabled;
       const named = await resolveStatusRef(client, entity, ((await client.get(`/${base}/${id}`)) as { project?: number }).project, statusRef);
       if ("error" in named) return violation([named.error]);
       const status = named.id;
