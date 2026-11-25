@@ -33,8 +33,10 @@ export interface PolicyRuntime {
   provision(a: { principal: string; requestKey: string; requestHash: string }, create: Parameters<typeof provisionProject>[3]): ReturnType<typeof provisionProject>;
   openMergeObligation(m: ManagedPolicy, o: MergeObligation): Promise<void>;
   settleMergeObligation(authorizationId: string, outcome: Settlement): Promise<void>;
-  /** The policy that was in force when the governed operation that wrote this artifact comment was authorized (via the mutation journal); undefined when none is recorded. */
-  policyAt(taigaProjectId: number, artifactCommentId: string): Promise<Policy | undefined>;
+  /** The policy that was in force when the governed operation that wrote this artifact comment was authorized (via the mutation journal). `"legacy"` is a PROVEN legacy
+   *  event: the project is registered as legacy, or the comment is older than the project's first activation. `undefined` is a managed event with no evidence (the journal
+   *  never learned the comment id): nothing is invented for it. */
+  policyAt(taigaProjectId: number, artifactCommentId: string, writtenAt?: string): Promise<Policy | "legacy" | undefined>;
   /** The obligations of this instance whose effect is not finished: the outcome is unknown (pending), or it is signed and its journal entry is still `pending_effect` (delivery not closed). */
   pendingMergeObligations(): Promise<PendingObligation[]>;
 }
@@ -127,17 +129,19 @@ export function createPolicyRuntime(pool: pg.Pool, baseUrl: string): PolicyRunti
          UPDATE mutation_journal SET phase = 'failed', updated_at = now() WHERE $2 = 'abandoned' AND id IN (SELECT journal_id FROM s) AND phase = 'pending_effect'`,
         [authorizationId, state, from, envelope, commentId]);
     },
-    async policyAt(taigaProjectId, artifactCommentId) {
-      const { rows } = await pool.query<{ payload: Policy }>(
-        `SELECT v.payload
-           FROM taiga_instance i
-           JOIN project_binding b ON b.instance_id = i.id AND b.taiga_project_id = $2
-           JOIN mutation_journal j ON j.project_id = b.id AND j.result->>'comment_id' = $3
-           JOIN policy_activation a ON a.id = j.activation_id
-           JOIN policy_version v ON v.project_id = a.project_id AND v.id = a.policy_id
-          WHERE i.base_url = $1 ORDER BY j.created_at DESC LIMIT 1`,
-        [baseUrl, taigaProjectId, artifactCommentId]);
-      return rows[0]?.payload;
+    async policyAt(taigaProjectId, artifactCommentId, writtenAt) {
+      const { rows } = await pool.query<{ payload: Policy | null; lifecycle: string; first_activation: Date | null }>(
+        `SELECT b.lifecycle, (SELECT min(a0.activated_at) FROM policy_activation a0 WHERE a0.project_id = b.id) AS first_activation,
+                (SELECT v.payload FROM mutation_journal j JOIN policy_activation a ON a.id = j.activation_id JOIN policy_version v ON v.project_id = a.project_id AND v.id = a.policy_id
+                  WHERE j.project_id = b.id AND j.result->>'comment_id' = $3 ORDER BY j.created_at DESC LIMIT 1) AS payload
+           FROM taiga_instance i JOIN project_binding b ON b.instance_id = i.id AND b.taiga_project_id = $2
+          WHERE i.base_url = $1`, [baseUrl, taigaProjectId, artifactCommentId]);
+      const row = rows[0];
+      if (!row) return undefined; // not mirrored: never treated as legacy
+      if (row.payload) return row.payload;
+      if (LEGACY.has(row.lifecycle)) return "legacy";
+      const written = writtenAt ? Date.parse(writtenAt) : NaN;
+      return row.first_activation === null || written < row.first_activation.getTime() ? "legacy" : undefined;
     },
     async pendingMergeObligations() {
       const { rows } = await pool.query(

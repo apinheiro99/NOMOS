@@ -101,7 +101,7 @@ beforeEach(() => {
       if (path === "/projects") return ok([{ id: 49 }]);
     }
     if (method === "PATCH") {
-      if (body.comment !== undefined) comments.push({ id: `c${++n}`, comment: body.comment, created_at: new Date(1760000000000 + n * 1000).toISOString() });
+      if (body.comment !== undefined) comments.push({ id: `c${++n}`, comment: body.comment, created_at: new Date(Date.now() + n * 1000).toISOString() });
       // eslint-disable-next-line @typescript-eslint/no-unused-vars -- rest-omit
       const { comment, version, ...rest } = body;
       Object.assign(task, rest, { version: task.version + 1 }); // every accepted write moves the version, as Taiga does
@@ -175,6 +175,24 @@ test("GPT-only stays GPT-only through recovery: a lost ledger is rebuilt with GP
   assert.equal(listed.recovery.recovered > 0, true, JSON.stringify(listed));
   assert.deepEqual([...new Set(listed.continuations.map((c: { to: string }) => c.to))], ["gpt"]);
   assert.deepEqual(payload(await call("claude", "taiga_continuations_pending", { project: 49 })).continuations, []);
+});
+
+test("a managed event whose journal never learned the comment id gets no recipient invented; a proven legacy event keeps the legacy rule", async () => {
+  assert.equal(payload(await move("gpt", T.prog, blueprint())).transitioned, true);
+  task.milestone = 1 as never;
+  await pool.query("UPDATE mutation_journal SET result = result - 'comment_id' WHERE project_id = $1", [binding]); // the crash came before the comment id was recorded
+  rmSync(process.env.TAIGA_MCP_CONTINUATION_FILE!, { force: true });
+  const listed = payload(await call("gpt", "taiga_continuations_pending", { project: 49 }));
+  assert.equal(listed.recovery.unresolved > 0, true, JSON.stringify(listed));
+  assert.deepEqual(listed.continuations, [], "nothing was dispatched on a guess");
+  assert.deepEqual(payload(await call("claude", "taiga_continuations_pending", { project: 49 })).continuations, []);
+  // The two kinds of evidence the runtime can give for a comment with no journal entry.
+  const before = new Date(Date.now() - 86_400_000).toISOString();
+  const after = new Date(Date.now() + 86_400_000).toISOString();
+  assert.equal(await runtime.policyAt(49, "no-such-comment", before), "legacy", "older than the first activation: written before the engine managed the project");
+  assert.equal(await runtime.policyAt(49, "no-such-comment", after), undefined, "newer than the first activation: managed, unproven");
+  assert.equal(await runtime.policyAt(50, "no-such-comment", after), "legacy", "a project registered as legacy");
+  assert.equal(await runtime.policyAt(99, "no-such-comment", before), undefined, "a project the mirror never saw is never treated as legacy");
 });
 
 test("the next decision uses the newly approved revision, with no restart", async () => {
