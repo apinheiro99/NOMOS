@@ -1,6 +1,7 @@
 import type pg from "pg";
 import { uuidv7 } from "../identity.js";
 import { withProjectLock } from "./repository.js";
+import { provisionProject } from "./provisioning.js";
 import type { Policy } from "./types.js";
 import type { MergeContext, MergeEnvelope, WorkItemIdentity } from "../workflow/merge-auth.js";
 
@@ -18,6 +19,8 @@ export interface PolicyRuntime {
   hold(taigaProjectId: number): Promise<(() => Promise<void>) | null>;
   begin(m: ManagedPolicy, operation: string, target: string): Promise<string>;
   finish(journalId: string, phase: "applied" | "completed" | "failed", result: object): Promise<void>;
+  /** Creates a project through the provisioning intent: idempotent by request key, bound (and its first policy stored) before it is reported. */
+  provision(a: { principal: string; requestKey: string; requestHash: string }, create: Parameters<typeof provisionProject>[3]): ReturnType<typeof provisionProject>;
   openMergeObligation(m: ManagedPolicy, o: MergeObligation): Promise<void>;
   settleMergeObligation(authorizationId: string, outcome: { signed: MergeEnvelope } | { abandoned: true }): Promise<void>;
   pendingMergeObligations(): Promise<MergeObligation[]>;
@@ -53,6 +56,7 @@ export function createPolicyRuntime(pool: pg.Pool, baseUrl: string): PolicyRunti
       if (!row.activation_id || !row.payload) throw new Error(`project ${taigaProjectId} is managed but has no active policy`);
       return { projectId: row.project_id, activationId: row.activation_id, revision: Number(row.revision), policy: row.payload };
     },
+    provision: (a, create) => provisionProject(pool, baseUrl, a, create),
     async hold(taigaProjectId) {
       const managed = await this.forProject(taigaProjectId);
       if (!managed) return null;

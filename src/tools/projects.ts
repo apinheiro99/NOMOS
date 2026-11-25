@@ -2,8 +2,12 @@ import { z } from "zod";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { TaigaClient } from "../client.js";
 import { prepareProject } from "../project-profile.js";
+import { inspect } from "../policy/mirror.js";
+import type { PolicyRuntime } from "../policy/runtime.js";
+import type { WorkflowIdentity } from "../workflow/actor.js";
+import { policyHash } from "../policy/service.js";
 
-export function registerProjectTools(server: McpServer, client: TaigaClient) {
+export function registerProjectTools(server: McpServer, client: TaigaClient, identity: WorkflowIdentity = { mode: "syntactic", actor: null }, runtime?: PolicyRuntime) {
   server.tool(
     "taiga_projects_list",
     "List projects. Optionally filter by member, is_featured, etc.",
@@ -43,20 +47,35 @@ export function registerProjectTools(server: McpServer, client: TaigaClient) {
       is_private: z.boolean().optional(),
       total_milestones: z.number().optional(),
       total_story_points: z.number().optional(),
+      request_key: z.string().min(8).max(100).optional().describe("Idempotency key for a policy-engine MCP: a retry with the same key and the same request returns the same project instead of creating another"),
       apply_profile: z.boolean().optional().describe("Default true: right after creation, bring the project to the canonical SCOPE profile (statuses, colours, types, priorities, severities) and make it UUID-ready. Set false for a raw Taiga default project."),
     },
-    async ({ apply_profile, ...params }) => {
+    async ({ apply_profile, request_key, ...params }) => {
       // The SCOPE profile projects are born with every module on (Epics, Kanban, Wiki, Contact); an explicit flag still wins.
       const modules = apply_profile === false ? {} : { is_epics_activated: true, is_kanban_activated: true, is_wiki_activated: true, is_contact_activated: true };
-      const data = (await client.post("/projects", { ...modules, ...params })) as { id?: number };
-      if (apply_profile === false || typeof data?.id !== "number") {
-        return { content: [{ type: "text" as const, text: JSON.stringify(data) }] };
+      const make = async () => {
+        const data = (await client.post("/projects", { ...modules, ...params })) as { id?: number; slug?: string; name?: string };
+        if (apply_profile === false || typeof data?.id !== "number") return { data, prepared: undefined };
+        // The project exists either way: a profile failure is reported, never thrown, and repaired by taiga_project_apply_profile.
+        try { return { data, prepared: await prepareProject(client, data.id, { dryRun: false }) as unknown }; }
+        catch (e) { return { data, prepared: { error: e instanceof Error ? e.message : String(e), note: "Project WAS created; run taiga_project_apply_profile (dry_run=false) to finish." } as unknown }; }
+      };
+      const text = (body: unknown) => ({ content: [{ type: "text" as const, text: JSON.stringify(body) }] });
+      if (runtime) {
+        // A project born under the policy engine is bound (and gets its first policy) before it is reported; the intent is recorded first.
+        let made: Awaited<ReturnType<typeof make>> | undefined;
+        const out = await runtime.provision(
+          { principal: identity.actor?.role ?? "unauthenticated", requestKey: request_key ?? `auto-${Date.now()}-${Math.random().toString(36).slice(2)}`, requestHash: policyHash({ apply_profile, ...params } as never) },
+          async () => {
+            made = await make();
+            const row = made.data as { id: number; slug: string; name: string };
+            return { id: row.id, slug: row.slug, name: row.name, seen: await inspect(client, row) };
+          },
+        );
+        return text(made ? { ...made.data, ...(made.prepared ? { profile_result: made.prepared } : {}), provisioned: true } : { id: out.id, replay: out.replay, provisioned: true });
       }
-      // The project exists either way: a profile failure is reported, never thrown, and repaired by taiga_project_apply_profile.
-      let prepared: unknown;
-      try { prepared = await prepareProject(client, data.id, { dryRun: false }); }
-      catch (e) { prepared = { error: e instanceof Error ? e.message : String(e), note: "Project WAS created; run taiga_project_apply_profile (dry_run=false) to finish." }; }
-      return { content: [{ type: "text" as const, text: JSON.stringify({ ...data, profile_result: prepared }) }] };
+      const { data, prepared } = await make();
+      return text(prepared ? { ...data, profile_result: prepared } : data);
     },
   );
 

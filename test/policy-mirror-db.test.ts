@@ -90,16 +90,16 @@ test("a status rename is drift: governed writes are refused until the vocabulary
   assert.equal((await runtime.forProject(1))?.revision, 1);
 });
 
-test("an ambiguous status name is treated as drift, and a duplicated UUID definition only clears uuid_ready", async () => {
+test("an ambiguous status name is drift, and a project that is not UUID-ready is not eligible (drift) until it is again", async () => {
   world.statuses[1] = [...TASK, "in  progress"];
   assert.deepEqual(actions(await sync()), ["mark_drift", "none"]);
   world.statuses[1] = TASK;
   await sync();
   world.dupUuid = [1];
-  assert.deepEqual(actions(await sync()), ["refresh", "none"]);
-  assert.equal((await rows())[0].uuidReady, false);
+  assert.deepEqual(actions(await sync()), ["mark_drift", "none"]);
+  assert.deepEqual([(await rows())[0].lifecycle, (await rows())[0].uuidReady], ["drift", false]);
   world.dupUuid = [];
-  await sync();
+  assert.deepEqual(actions(await sync()), ["recover", "none"]);
 });
 
 test("a project that disappears is inaccessible, not removed, and comes back with its policy", async () => {
@@ -129,4 +129,26 @@ test("the lifecycle table: every case", () => {
   assert.equal(plan(e("pending", false), s(true)).action, "create_managed");
   assert.equal(plan(e("inaccessible"), s(false)).action, "mark_drift");
   assert.equal(plan(e("legacy", false), undefined).action, "none");
+  // What the policy depends on changed: drift, never absorbed; and it recovers only when Taiga is back to the bound fingerprint.
+  assert.equal(plan(e("managed"), { ...s(true), fingerprint: "other" }).action, "mark_drift");
+  assert.equal(plan(e("drift"), { ...s(true), fingerprint: "other" }).action, "none");
+  assert.equal(plan({ ...e("managed"), fingerprint: null }, s(true)).action, "refresh");
+});
+
+test("provisioning: intent -> created -> bound, a retry with the same key answers the same project, an unknown outcome is never re-run", async () => {
+  const runtime = createPolicyRuntime(pool, BASE);
+  const seen = { id: 9, slug: "n", name: "N", eligible: true, fingerprint: "f", uuidReady: true };
+  let created = 0;
+  const create = async () => { created += 1; return { id: 9, slug: "n", name: "N", seen }; };
+  const a = { principal: "po", requestKey: "key-aaaaaaaa", requestHash: "h1" };
+  assert.deepEqual(await runtime.provision(a, create), { id: 9, replay: false });
+  assert.deepEqual((await runtime.forProject(9))?.revision, 1, "bound and managed with its first policy");
+  assert.deepEqual(await runtime.provision(a, create), { id: 9, replay: true });
+  assert.equal(created, 1);
+  await assert.rejects(runtime.provision({ ...a, requestHash: "h2" }, create), /request_key_reused|different project request/);
+  const boom = { principal: "po", requestKey: "key-bbbbbbbb", requestHash: "h3" };
+  await assert.rejects(runtime.provision(boom, async () => { throw new Error("taiga down"); }), /taiga down/);
+  await assert.rejects(runtime.provision(boom, create), /stopped at "failed"/);
+  assert.equal(created, 1, "the failed request was not run again");
+  assert.deepEqual((await pool.query("SELECT request_key, phase FROM provisioning_intent ORDER BY request_key")).rows, [{ request_key: "key-aaaaaaaa", phase: "bound" }, { request_key: "key-bbbbbbbb", phase: "failed" }]);
 });

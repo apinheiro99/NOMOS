@@ -44,7 +44,7 @@ export function createTaigaMcpServer(client: TaigaClient = new TaigaClient(), id
   addGovernance(server, client, governance, identity, runtime);
 
   // Register all tool modules
-  registerProjectTools(server, client);
+  registerProjectTools(server, client, identity, runtime);
   registerEpicTools(server, client);
   registerMoveTools(server, client);
   registerUserStoryTools(server, client);
