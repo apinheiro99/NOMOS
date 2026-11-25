@@ -29,3 +29,6 @@ export const INTERNAL_MUTATORS: Readonly<Record<string, readonly string[]>> = {
   "src/workflow/tools.ts": ["taiga_workflow_request_create", "taiga_workflow_request_answer", "taiga_human_decision_resolve"],
   "src/workflow/transition.ts": ["taiga_workflow_transition"],
 };
+
+// The one write the transitions decide; every other write is decided by the operation permissions of the policy.
+export const DECIDED_BY_TRANSITIONS = "taiga_workflow_transition";

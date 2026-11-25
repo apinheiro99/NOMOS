@@ -37,7 +37,7 @@ route("POST", "/projects/:id/simulate", async (db, p, r) => ok(await simulate(db
 route("POST", "/projects/:id/proposals", async (db, p, r) => ok(await propose(db, projectId(p), PO, proposeBody.parse(r.body).policy as Policy), 201));
 route("POST", "/projects/:id/proposals/:revision/approve", async (db, p, r, mirror) => {
   const policyId = await policyIdOf(db, p);
-  if (mirror) await requireTasksInKnownStates(db, mirror.client, projectId(p), policyId);
+  if (mirror) await requireCardsInKnownStates(db, mirror.client, projectId(p), policyId);
   return ok(await approve(db, projectId(p), PO, { policyId, ...approveBody.parse(r.body) }));
 });
 route("POST", "/projects/:id/proposals/:revision/reject", async (db, p, r) => ok(await reject(db, projectId(p), PO, { policyId: await policyIdOf(db, p), ...rejectBody.parse(r.body) })));
@@ -47,15 +47,22 @@ route("POST", "/reconcile", async (db, _p, r, mirror) => {
 });
 route("POST", "/projects/:id/rollback", async (db, p, r) => ok(await rollback(db, projectId(p), PO, rollbackBody.parse(r.body).toRevision), 201));
 
-// An open Task sitting in a status the new policy does not know would be orphaned by the change: the approval is refused and the cards are listed.
-async function requireTasksInKnownStates(db: pg.Pool, client: TaigaClient, project: string, policyId: string): Promise<void> {
+// An open Task, Story or Epic sitting in a status the new policy does not know would be orphaned by the change: the approval is refused and the cards are listed.
+const CARDS = [["task", "tasks"], ["userstory", "userstories"], ["epic", "epics"]] as const;
+async function requireCardsInKnownStates(db: pg.Pool, client: TaigaClient, project: string, policyId: string): Promise<void> {
   const { rows } = await db.query<{ taiga_project_id: string; payload: Policy }>(
     "SELECT b.taiga_project_id, v.payload FROM project_binding b JOIN policy_version v ON v.project_id = b.id WHERE b.id = $1 AND v.id = $2", [project, policyId]);
   if (!rows[0]) throw notFound("proposal");
-  const known = new Set(Object.keys(rows[0].payload.entities.task.states));
-  const open = (await client.get("/tasks", { project: Number(rows[0].taiga_project_id), status__is_closed: false })) as { ref: number; status_extra_info?: { name?: string } }[];
-  const orphaned = open.filter((t) => !known.has(norm(t.status_extra_info?.name ?? "")));
-  if (orphaned.length) throw new PolicyError(409, "tasks_in_unknown_state", `${orphaned.length} open Task(s) sit in a status this policy does not have: ${orphaned.map((t) => `#${t.ref}`).join(", ")}`);
+  const orphaned: string[] = [];
+  for (const [entity, path] of CARDS) {
+    const rules = rows[0].payload.entities[entity];
+    // Only an entity whose every status is governed has a closed vocabulary; for the others a status the policy does not list is a plain, ungoverned one.
+    if (rules.governed !== "all") continue;
+    const known = new Set(Object.keys(rules.states));
+    const open = (await client.get(`/${path}`, { project: Number(rows[0].taiga_project_id), status__is_closed: false })) as { ref: number; status_extra_info?: { name?: string } }[];
+    orphaned.push(...open.filter((c) => !known.has(norm(c.status_extra_info?.name ?? ""))).map((c) => `${entity} #${c.ref}`));
+  }
+  if (orphaned.length) throw new PolicyError(409, "cards_in_unknown_state", `${orphaned.length} open card(s) sit in a status this policy does not have: ${orphaned.join(", ")}`);
 }
 
 // A proposal is addressed by its revision number in the URL, as the History screen shows it.
