@@ -1,6 +1,7 @@
 import type { TaigaClient } from "../client.js";
 import { callerRole, type WorkflowIdentity } from "./actor.js";
 import { validateArtifact } from "./artifacts.js";
+import { createHash } from "node:crypto";
 import { uuidv7 } from "../identity.js";
 import { loadSigner, mergeContextProblems, signMergeAuthorization, type MergeContext, type Signer, type WorkItemIdentity } from "./merge-auth.js";
 import { projectResolver, renderGovernedArtifact } from "./refs.js";
@@ -16,8 +17,7 @@ import { mutate } from "./mutation.js";
 import { storyHasChildTask } from "./validators.js";
 import { refusalMessage, storyStartRefusal, taskStartRefusal, type Refusal } from "./start-rules.js";
 import { BASE, STATUS_BASE, text, violation, type ToolResult } from "./result.js";
-import { authorizationTravels, noticeForTransition, type Party } from "./notify.js";
-import type { Policy } from "../policy/types.js";
+import { authorizationTravels, noticeForTransition } from "./notify.js";
 import { announce } from "./continuation.js";
 import { moveClosedStoryToTail } from "./story-order.js";
 import { childTaskStates, promoteStoryWhenChildrenTerminal } from "./story-readiness.js";
@@ -285,7 +285,7 @@ async function decideAndWrite(client: TaigaClient, identity: WorkflowIdentity, a
   const authorizationId = owed?.authorizationId;
   if (owed) {
     try {
-      await owed.runtime.openMergeObligation(owed.managed, { authorizationId: owed.authorizationId, entity: owed.entity, taigaId: a.id, doneStatus: a.status, taigaProject: owed.project, context: a.mergeContext as MergeContext, workItem: owed.workItem, targetWorkItem: owed.target });
+      await owed.runtime.openMergeObligation(owed.managed, { authorizationId: owed.authorizationId, entity: owed.entity, taigaId: a.id, doneStatus: a.status, taigaProject: owed.project, context: a.mergeContext as MergeContext, workItem: owed.workItem, targetWorkItem: owed.target, journalId: journalId!, actor: role as "gpt" | "claude" | "po", recipient: recipientOf(owed.managed.policy, owed.entity, "done"), approvalHash: createHash("sha256").update(signed).digest("hex") });
     } catch (e) {
       if (journalId && runtime) await runtime.finish(journalId, "failed", { problem: "merge obligation not stored" }).catch(() => undefined);
       return rejection({ ...ctxBase, code: "WORKFLOW_POLICY_UNAVAILABLE", message: `the merge obligation could not be stored, so nothing was written: ${(e as Error).message}` });
@@ -328,7 +328,7 @@ async function decideAndWrite(client: TaigaClient, identity: WorkflowIdentity, a
   if (signer && merge?.identity && merge.target && item.project !== undefined) {
     try {
       const envelope = sign(signer, a.mergeContext as MergeContext, item.project, merge.identity, merge.target, authorizationId);
-      if (authorizationId && runtime) await runtime.settleMergeObligation(authorizationId, { signed: envelope });
+      if (authorizationId && runtime) await runtime.settleMergeObligation(authorizationId, { signed: envelope, approvalCommentId: persisted.id });
       mergeAuth = { merge_authorization: envelope };
     } catch (e) {
       mergeAuth = { merge_authorization_error: { message: (e as Error).message, note: "The Done transition IS persisted and authoritative; do not retry it. Only the authorization was not issued." } };

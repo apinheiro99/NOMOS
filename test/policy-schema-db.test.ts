@@ -46,9 +46,9 @@ const activate = async (pid: string, vid: string, rid: string, previous: string 
 };
 
 test("migration runs on a fresh database, is idempotent, and records what it applied", async () => {
-  assert.deepEqual(await migrate(c, DIR), ["0001_policy_schema.sql", "0002_instance_base_url_unique.sql", "0003_merge_obligation.sql"]);
+  assert.deepEqual(await migrate(c, DIR), ["0001_policy_schema.sql", "0002_instance_base_url_unique.sql", "0003_merge_obligation.sql", "0004_merge_obligation_evidence.sql"]);
   assert.deepEqual(await migrate(c, DIR), []);
-  assert.equal((await c.query("SELECT count(*)::int AS n FROM schema_migration")).rows[0].n, 3);
+  assert.equal((await c.query("SELECT count(*)::int AS n FROM schema_migration")).rows[0].n, 4);
 });
 
 test("a failed migration changes nothing and says which file failed", async () => {
