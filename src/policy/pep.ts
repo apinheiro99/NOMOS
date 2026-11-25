@@ -1,8 +1,8 @@
 import type { TaigaClient } from "../client.js";
 import { OPERATIONS } from "./operations.js";
+import { activeManaged, runManaged } from "./context.js";
 import { DECIDED_BY_TRANSITIONS, type Operation } from "./catalog.js";
 import type { ManagedPolicy, PolicyRuntime } from "./runtime.js";
-import { AsyncLocalStorage } from "node:async_hooks";
 import type { ActorRole } from "../workflow/actor.js";
 import { permits } from "./evaluator.js";
 import { foldContinuations } from "../workflow/continuation.js";
@@ -76,8 +76,7 @@ async function projectOf(op: Operation, args: Record<string, unknown>, client: T
 }
 
 // Inside a governed project the governance switch is ON for the whole call: turning governance off frees legacy projects, never one the engine manages.
-const managedCall = new AsyncLocalStorage<true>();
-export const scopedGovernance = <T extends { enabled: boolean }>(state: T): T => Object.create(state, { enabled: { get: () => state.enabled || managedCall.getStore() === true } });
+export const scopedGovernance = <T extends { enabled: boolean }>(state: T): T => Object.create(state, { enabled: { get: () => state.enabled || activeManaged() !== undefined } });
 
 export type Guard = { refusal: string } | { managed: ManagedPolicy | null; release: (() => Promise<void>) | null };
 
@@ -101,5 +100,5 @@ export async function guard(name: string, args: Record<string, unknown>, client:
 
 // Runs the handler as part of a governed call: governance forced ON for it, the project lock held until it ends.
 export async function underGuard<T>(g: Extract<Guard, { managed: ManagedPolicy | null }>, run: () => Promise<T>): Promise<T> {
-  try { return await (g.managed ? managedCall.run(true, run) : run()); } finally { await g.release?.(); }
+  try { return await (g.managed ? runManaged(g.managed, run) : run()); } finally { await g.release?.(); }
 }

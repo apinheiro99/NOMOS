@@ -66,6 +66,7 @@ after(async () => {
   await db.drop();
 });
 
+let members: object[] = []; // the project's members, for the Assigned projection
 beforeEach(() => {
   for (const [k, v] of Object.entries({ TAIGA_URL: BASE, TAIGA_USERNAME: "u", TAIGA_PASSWORD: "p" })) { saved[k] = process.env[k]; process.env[k] = v; }
   dir = mkdtempSync(join(tmpdir(), "lab-"));
@@ -88,7 +89,7 @@ beforeEach(() => {
     if (method === "GET") {
       if (path === "/task-statuses") return ok(STATUSES);
       if (path === "/users/me") return ok({ username: "u" });
-      if (path === "/users") return ok([]);
+      if (path === "/users") return ok(members);
       let m;
       if ((m = /^\/task-statuses\/(\d+)$/.exec(path))) return ok({ id: Number(m[1]), is_closed: [5, 6].includes(Number(m[1])), order: Number(m[1]) });
       if (path === "/history/task/7") return ok(comments);
@@ -153,6 +154,17 @@ test("GPT-only policy: GPT releases, executes and hands off alone; Claude is ref
   const bp = comments.find((c) => c.comment.includes("Implementation Blueprint"))!.id;
   assert.equal(payload(await move("gpt", T.val, handoff(bp))).transitioned, true);
   assert.deepEqual((await journal()).map((j) => `${j.operation}:${j.target_key}:${j.phase}`), ["workflow_transition:task:7:completed", "workflow_transition:task:7:completed"]);
+});
+
+test("Assigned follows the active policy: under GPT-only the Task is assigned to GPT, and a legacy owner never overrides it", async () => {
+  Object.assign(process.env, { TAIGA_MCP_EXPECTED_ACCOUNT_GPT: "u", TAIGA_MCP_EXPECTED_ACCOUNT_CLAUDE: "claude-acct" });
+  members = [{ id: 11, username: "u", is_active: true }, { id: 12, username: "claude-acct", is_active: true }];
+  try {
+    const out = payload(await move("gpt", T.prog, blueprint()));
+    assert.equal(out.transitioned, true, JSON.stringify(out));
+    assert.equal((task as { assigned_to?: number }).assigned_to, 11, "the legacy owner of In Progress is Claude (12): the policy says GPT");
+    assert.equal(out.integrity, undefined);
+  } finally { delete process.env.TAIGA_MCP_EXPECTED_ACCOUNT_GPT; delete process.env.TAIGA_MCP_EXPECTED_ACCOUNT_CLAUDE; members = []; }
 });
 
 test("GPT-only stays GPT-only through recovery: a lost ledger is rebuilt with GPT as the recipient, never Claude", async () => {
