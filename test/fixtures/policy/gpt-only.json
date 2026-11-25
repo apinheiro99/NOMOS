@@ -1,0 +1,257 @@
+{
+ "schemaVersion": 1,
+ "roles": [
+  "gpt",
+  "po"
+ ],
+ "entities": {
+  "task": {
+   "states": {
+    "to do": {
+     "owner": "gpt"
+    },
+    "in progress": {
+     "owner": "gpt"
+    },
+    "gpt validation": {
+     "owner": "gpt"
+    },
+    "human decision": {
+     "owner": "po"
+    },
+    "done": {
+     "owner": null
+    },
+    "cancelled": {
+     "owner": null
+    }
+   },
+   "governed": "all",
+   "transitions": [
+    {
+     "from": "to do",
+     "to": "in progress",
+     "allow": [
+      "gpt",
+      "po"
+     ],
+     "artifact": "implementation_blueprint",
+     "mode": "initial"
+    },
+    {
+     "from": "gpt validation",
+     "to": "in progress",
+     "allow": [
+      "gpt",
+      "po"
+     ],
+     "artifact": "implementation_blueprint",
+     "mode": "correction"
+    },
+    {
+     "from": "in progress",
+     "to": "gpt validation",
+     "allow": [
+      "gpt"
+     ],
+     "artifact": "execution_handoff"
+    },
+    {
+     "from": "gpt validation",
+     "to": "done",
+     "allow": [
+      "gpt",
+      "po"
+     ],
+     "artifact": "validation_approval"
+    },
+    {
+     "from": "to do",
+     "to": "human decision",
+     "allow": [
+      "gpt"
+     ],
+     "artifact": "human_decision_request"
+    },
+    {
+     "from": "in progress",
+     "to": "human decision",
+     "allow": [
+      "gpt"
+     ],
+     "artifact": "human_decision_request"
+    },
+    {
+     "from": "gpt validation",
+     "to": "human decision",
+     "allow": [
+      "gpt"
+     ],
+     "artifact": "human_decision_request"
+    },
+    {
+     "from": "in progress",
+     "to": "to do",
+     "allow": [
+      "gpt"
+     ],
+     "artifact": "blocker_report"
+    },
+    {
+     "from": "gpt validation",
+     "to": "to do",
+     "allow": [
+      "gpt"
+     ],
+     "artifact": "blocker_report"
+    },
+    {
+     "from": "to do",
+     "to": "cancelled",
+     "allow": [
+      "gpt",
+      "po"
+     ],
+     "artifact": "po_decision"
+    },
+    {
+     "from": "in progress",
+     "to": "cancelled",
+     "allow": [
+      "gpt",
+      "po"
+     ],
+     "artifact": "po_decision"
+    },
+    {
+     "from": "gpt validation",
+     "to": "cancelled",
+     "allow": [
+      "gpt",
+      "po"
+     ],
+     "artifact": "po_decision"
+    },
+    {
+     "from": "human decision",
+     "to": "cancelled",
+     "allow": [
+      "gpt",
+      "po"
+     ],
+     "artifact": "po_decision"
+    },
+    {
+     "from": "done",
+     "to": "cancelled",
+     "allow": [
+      "gpt",
+      "po"
+     ],
+     "artifact": "po_decision"
+    }
+   ]
+  },
+  "userstory": {
+   "states": {
+    "ready": {
+     "owner": "gpt"
+    },
+    "in progress": {
+     "owner": "gpt"
+    },
+    "gpt validation": {
+     "owner": "gpt"
+    },
+    "done": {
+     "owner": null
+    },
+    "human decision": {
+     "owner": "po"
+    },
+    "cancelled": {
+     "owner": null
+    }
+   },
+   "governed": [
+    "in progress",
+    "gpt validation",
+    "done"
+   ],
+   "transitions": [
+    {
+     "from": "ready",
+     "to": "in progress",
+     "allow": [
+      "gpt",
+      "po"
+     ],
+     "artifact": "story_start"
+    },
+    {
+     "from": "in progress",
+     "to": "gpt validation",
+     "allow": [
+      "gpt",
+      "po"
+     ],
+     "artifact": "story_validation_handoff"
+    },
+    {
+     "from": "gpt validation",
+     "to": "in progress",
+     "allow": [
+      "gpt",
+      "po"
+     ],
+     "artifact": "story_correction"
+    },
+    {
+     "from": "gpt validation",
+     "to": "done",
+     "allow": [
+      "gpt",
+      "po"
+     ],
+     "artifact": "story_validation_approval"
+    }
+   ]
+  },
+  "epic": {
+   "states": {
+    "in progress": {
+     "owner": "gpt"
+    },
+    "gpt validation": {
+     "owner": "gpt"
+    },
+    "done": {
+     "owner": null
+    }
+   },
+   "governed": [
+    "gpt validation",
+    "done"
+   ],
+   "transitions": [
+    {
+     "from": "in progress",
+     "to": "gpt validation",
+     "allow": [
+      "gpt"
+     ],
+     "artifact": "execution_handoff"
+    },
+    {
+     "from": "gpt validation",
+     "to": "done",
+     "allow": [
+      "gpt",
+      "po"
+     ],
+     "artifact": "validation_approval"
+    }
+   ]
+  }
+ }
+}

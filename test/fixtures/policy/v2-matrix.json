@@ -1,0 +1,374 @@
+{
+ "schemaVersion": 1,
+ "roles": [
+  "gpt",
+  "claude",
+  "po"
+ ],
+ "entities": {
+  "task": {
+   "states": {
+    "to do": {
+     "owner": "gpt"
+    },
+    "in progress": {
+     "owner": {
+      "field": "executor"
+     }
+    },
+    "request": {
+     "owner": "gpt"
+    },
+    "validation": {
+     "owner": {
+      "field": "validator"
+     }
+    },
+    "external blocked": {
+     "owner": "gpt"
+    },
+    "human decision": {
+     "owner": "po"
+    },
+    "done": {
+     "owner": "gpt"
+    },
+    "cancelled": {
+     "owner": "gpt"
+    }
+   },
+   "governed": "all",
+   "transitions": [
+    {
+     "from": "to do",
+     "to": "in progress",
+     "allow": [
+      "gpt"
+     ],
+     "artifact": "implementation_blueprint",
+     "mode": "initial"
+    },
+    {
+     "from": "to do",
+     "to": "external blocked",
+     "allow": [
+      "gpt"
+     ],
+     "artifact": "blocker_report"
+    },
+    {
+     "from": "to do",
+     "to": "human decision",
+     "allow": [
+      "gpt"
+     ],
+     "artifact": "human_decision_request"
+    },
+    {
+     "from": "to do",
+     "to": "cancelled",
+     "allow": [
+      "gpt"
+     ],
+     "artifact": "po_decision"
+    },
+    {
+     "from": "in progress",
+     "to": "to do",
+     "allow": [
+      {
+       "field": "executor"
+      },
+      "gpt"
+     ],
+     "artifact": "blocker_report"
+    },
+    {
+     "from": "in progress",
+     "to": "request",
+     "allow": [
+      {
+       "field": "executor"
+      }
+     ],
+     "artifact": "workflow_request"
+    },
+    {
+     "from": "in progress",
+     "to": "validation",
+     "allow": [
+      {
+       "field": "executor"
+      }
+     ],
+     "artifact": "execution_handoff"
+    },
+    {
+     "from": "in progress",
+     "to": "external blocked",
+     "allow": [
+      {
+       "field": "executor"
+      },
+      "gpt"
+     ],
+     "artifact": "blocker_report"
+    },
+    {
+     "from": "in progress",
+     "to": "human decision",
+     "allow": [
+      {
+       "field": "executor"
+      },
+      "gpt"
+     ],
+     "artifact": "human_decision_request"
+    },
+    {
+     "from": "in progress",
+     "to": "cancelled",
+     "allow": [
+      "gpt"
+     ],
+     "artifact": "po_decision"
+    },
+    {
+     "from": "request",
+     "to": "in progress",
+     "allow": [
+      "gpt"
+     ],
+     "artifact": "request_resume"
+    },
+    {
+     "from": "request",
+     "to": "external blocked",
+     "allow": [
+      "gpt"
+     ],
+     "artifact": "blocker_report"
+    },
+    {
+     "from": "request",
+     "to": "human decision",
+     "allow": [
+      "gpt"
+     ],
+     "artifact": "human_decision_request"
+    },
+    {
+     "from": "request",
+     "to": "cancelled",
+     "allow": [
+      "gpt"
+     ],
+     "artifact": "po_decision"
+    },
+    {
+     "from": "validation",
+     "to": "to do",
+     "allow": [
+      {
+       "field": "validator"
+      },
+      "gpt"
+     ],
+     "artifact": "blocker_report"
+    },
+    {
+     "from": "validation",
+     "to": "in progress",
+     "allow": [
+      {
+       "field": "validator"
+      }
+     ],
+     "artifact": "implementation_blueprint",
+     "mode": "correction"
+    },
+    {
+     "from": "validation",
+     "to": "external blocked",
+     "allow": [
+      {
+       "field": "validator"
+      },
+      "gpt"
+     ],
+     "artifact": "blocker_report"
+    },
+    {
+     "from": "validation",
+     "to": "human decision",
+     "allow": [
+      {
+       "field": "validator"
+      },
+      "gpt"
+     ],
+     "artifact": "human_decision_request"
+    },
+    {
+     "from": "validation",
+     "to": "done",
+     "allow": [
+      {
+       "field": "validator"
+      }
+     ],
+     "artifact": "validation_approval"
+    },
+    {
+     "from": "validation",
+     "to": "cancelled",
+     "allow": [
+      "gpt"
+     ],
+     "artifact": "po_decision"
+    },
+    {
+     "from": "external blocked",
+     "to": "to do",
+     "allow": [
+      "gpt"
+     ],
+     "artifact": "blocker_report"
+    },
+    {
+     "from": "external blocked",
+     "to": "in progress",
+     "allow": [
+      "gpt"
+     ],
+     "artifact": "blocker_report"
+    },
+    {
+     "from": "external blocked",
+     "to": "validation",
+     "allow": [
+      "gpt"
+     ],
+     "artifact": "blocker_report"
+    },
+    {
+     "from": "external blocked",
+     "to": "human decision",
+     "allow": [
+      "gpt"
+     ],
+     "artifact": "human_decision_request"
+    },
+    {
+     "from": "external blocked",
+     "to": "cancelled",
+     "allow": [
+      "gpt"
+     ],
+     "artifact": "po_decision"
+    }
+   ]
+  },
+  "userstory": {
+   "states": {
+    "ready": {
+     "owner": "gpt"
+    },
+    "in progress": {
+     "owner": "gpt"
+    },
+    "gpt validation": {
+     "owner": "gpt"
+    },
+    "done": {
+     "owner": null
+    },
+    "human decision": {
+     "owner": "po"
+    },
+    "cancelled": {
+     "owner": null
+    }
+   },
+   "governed": [
+    "in progress",
+    "gpt validation",
+    "done"
+   ],
+   "transitions": [
+    {
+     "from": "ready",
+     "to": "in progress",
+     "allow": [
+      "gpt",
+      "po"
+     ],
+     "artifact": "story_start"
+    },
+    {
+     "from": "in progress",
+     "to": "gpt validation",
+     "allow": [
+      "gpt",
+      "po"
+     ],
+     "artifact": "story_validation_handoff"
+    },
+    {
+     "from": "gpt validation",
+     "to": "in progress",
+     "allow": [
+      "gpt",
+      "po"
+     ],
+     "artifact": "story_correction"
+    },
+    {
+     "from": "gpt validation",
+     "to": "done",
+     "allow": [
+      "gpt",
+      "po"
+     ],
+     "artifact": "story_validation_approval"
+    }
+   ]
+  },
+  "epic": {
+   "states": {
+    "in progress": {
+     "owner": "gpt"
+    },
+    "gpt validation": {
+     "owner": "gpt"
+    },
+    "done": {
+     "owner": null
+    }
+   },
+   "governed": [
+    "gpt validation",
+    "done"
+   ],
+   "transitions": [
+    {
+     "from": "in progress",
+     "to": "gpt validation",
+     "allow": [
+      "gpt"
+     ],
+     "artifact": "execution_handoff"
+    },
+    {
+     "from": "gpt validation",
+     "to": "done",
+     "allow": [
+      "gpt",
+      "po"
+     ],
+     "artifact": "validation_approval"
+    }
+   ]
+  }
+ }
+}
