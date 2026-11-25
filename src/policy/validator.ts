@@ -1,4 +1,5 @@
 import { ARTIFACT_TYPES } from "./catalog.js";
+import { OPERATIONS } from "./operations.js";
 import { norm } from "../workflow/policy.js";
 import type { Policy } from "./types.js";
 
@@ -12,6 +13,13 @@ export function validatePolicy(policy: Policy): Violation[] {
   const add = (code: string, where: string, detail: string) => out.push({ code, where, detail });
   const roles = new Set(policy.roles);
 
+  // Operation permissions name real, non-workflow writes and bound roles; one that cannot be called by anybody is a mistake, not a rule.
+  const permitted = new Set(OPERATIONS.filter((o) => o.access === "write" && o.rule !== "workflow").map((o) => o.id));
+  for (const [id, allow] of Object.entries(policy.operations ?? {})) {
+    if (!permitted.has(id)) add("unknown_operation", `operations.${id}`, "not a cataloged write operation that a policy permission can govern");
+    if (!allow.length) add("no_role", `operations.${id}`, "no role may call this operation");
+    for (const r of allow) if (!roles.has(r)) add("role_without_binding", `operations.${id}`, `role "${r}" has no binding`);
+  }
   // A missing entity would leave every decision about it to chance, so the three the workflow governs must all be present.
   for (const entity of ["task", "userstory", "epic"]) if (!policy.entities[entity as keyof Policy["entities"]]) add("missing_entity", entity, `the policy has no rules for ${entity}`);
 

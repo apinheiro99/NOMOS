@@ -10,9 +10,16 @@ import { OPERATIONS } from "../dist/policy/operations.js";
 // F3.2a: the operation catalog is the runtime tool registry, classified. Nothing may be a tool without an operation, or the reverse.
 const inventory = await toolInventory();
 const ids = OPERATIONS.map((o) => o.id);
+const access = JSON.parse(readFileSync("scripts/tool-access.json", "utf8")) as { read: string[]; write: string[] };
+
+test("every tool is classified read or write by a person, once, and the lists name only real tools", () => {
+  const all = [...access.read, ...access.write];
+  assert.equal(new Set(all).size, all.length, "no tool in both lists or twice");
+  assert.deepEqual([...all].sort(), inventory.map((t) => t.name).sort());
+});
 
 test("the catalog equals tools/list exactly, in both directions", () => {
-  assert.equal(OPERATIONS.length, 257);
+  assert.equal(OPERATIONS.length, inventory.length, "one operation per tool the server really lists");
   assert.equal(new Set(ids).size, ids.length, "no operation twice");
   assert.deepEqual([...ids].sort(), inventory.map((t) => t.name).sort());
 });

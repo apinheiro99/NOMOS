@@ -2,6 +2,9 @@ import type { TaigaClient } from "../client.js";
 import { OPERATIONS } from "./operations.js";
 import type { Operation } from "./catalog.js";
 import type { PolicyRuntime } from "./runtime.js";
+import type { ActorRole } from "../workflow/actor.js";
+import { permits } from "./evaluator.js";
+import { foldContinuations } from "../workflow/continuation.js";
 
 // Policy enforcement point: ONE decision before any tool handler runs. A write inside a project whose binding is not safe (drift, pending,
 // inaccessible, managed without an active policy, database down) is refused here, so a denied call has no side effects at all.
@@ -24,9 +27,21 @@ const RESOURCE_ENDPOINT: readonly (readonly [RegExp, string])[] = [
   [/^taiga_project(s_|_export)/, "projects"],
 ];
 
-// These resolve their own project from richer arguments and decide through the runtime themselves (transition, request, Human Decision),
-// or address a target whose kind is chosen by an argument (move, continuation ack). They are cataloged, so they are never "unknown".
-const SELF_SCOPED = new Set(["taiga_move", "taiga_continuation_ack", "taiga_webhooklogs_resend"]);
+// Operations whose project is not "the row at this id": the target kind is an argument, or the id is a continuation or a log entry. Each is resolved to a
+// project here, so they pass through the same decision as every other write (nothing is exempt).
+const BASE_OF = { task: "tasks", userstory: "userstories", epic: "epics" } as const;
+const SPECIAL: Record<string, (a: Record<string, unknown>, client: TaigaClient) => Promise<number | null>> = {
+  taiga_move: async (a, client) => a.kind === "task" ? projectOfRow(client, "tasks", a.id) : a.kind === "sprint" ? Number(a.container_id) : projectOfRow(client, "userstories", a.id),
+  taiga_workflow_transition: (a, client) => projectOfRow(client, BASE_OF[a.entity as keyof typeof BASE_OF] ?? "tasks", a.id),
+  taiga_continuation_ack: async (a) => foldContinuations().get(String(a.id))?.project ?? null,
+  taiga_webhooklogs_resend: async (a, client) => projectOfRow(client, "webhooks", ((await client.get(`/webhooklogs/${a.id}`)) as { webhook?: number }).webhook),
+};
+
+async function projectOfRow(client: TaigaClient, collection: string, id: unknown): Promise<number> {
+  const row = (await client.get(`/${collection}/${id}`)) as { project?: number };
+  if (typeof row.project !== "number") throw new Error(`${collection}/${id} has no project`);
+  return row.project;
+}
 
 export function operationOf(name: string): Operation | undefined {
   return BY_ID.get(name);
@@ -38,6 +53,8 @@ export function assertCataloged(name: string): void {
 }
 
 async function projectOf(op: Operation, args: Record<string, unknown>, client: TaigaClient): Promise<number | null> {
+  const special = SPECIAL[op.id];
+  if (special) return special(args, client);
   const { scope } = op;
   if (scope.kind === "global") return null;
   const value = args[scope.param];
@@ -55,16 +72,18 @@ async function projectOf(op: Operation, args: Record<string, unknown>, client: T
   return row.project;
 }
 
-// Returns a refusal message, or null when the call may continue to the guards and the handler.
-export async function enforce(name: string, args: Record<string, unknown>, client: TaigaClient, runtime: PolicyRuntime): Promise<string | null> {
+// Returns a refusal message, or null when the call may continue to the guards and the handler. Reads are not decided here. A workflow operation is decided by
+// the transitions; every other write needs the role to be listed for it in the project's policy. A project that is not safe refuses every write.
+export async function enforce(name: string, args: Record<string, unknown>, client: TaigaClient, runtime: PolicyRuntime, role: ActorRole | null): Promise<string | null> {
   const op = BY_ID.get(name);
   if (!op) return `tool ${name} is not in the policy catalog`;
-  if (op.access === "read" || op.rule === "workflow" || SELF_SCOPED.has(op.id)) return null;
+  if (op.access === "read") return null;
   try {
     const project = await projectOf(op, args, client);
     if (project === null || Number.isNaN(project)) return null;
-    await runtime.forProject(project);
-    return null;
+    const managed = await runtime.forProject(project);
+    if (!managed || op.rule === "workflow" || permits(managed.policy, name, role)) return null;
+    return `"${name}" is not permitted to ${role ?? "an unauthenticated caller"} by the policy of this project (revision ${managed.revision})`;
   } catch (e) {
     return (e as Error).message;
   }

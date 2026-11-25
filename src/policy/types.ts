@@ -16,7 +16,9 @@ export interface EntityPolicy {
   transitions: TransitionRule[];
 }
 
-export interface Policy { schemaVersion: 1; roles: ActorRole[]; entities: Record<EntityKind, EntityPolicy> }
+// `operations` is the explicit permission list of the non-workflow writes (the catalog's baseline and bootstrap operations): which roles may call each.
+// An operation that is not listed is denied; the workflow operations are decided by the transitions instead.
+export interface Policy { schemaVersion: 1; roles: ActorRole[]; operations: Record<string, ActorRole[]>; entities: Record<EntityKind, EntityPolicy> }
 
 export type Decision =
   | { kind: "typed"; artifact: ArtifactType; mode?: BlueprintMode; override: boolean }

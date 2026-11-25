@@ -1,6 +1,7 @@
 import { ownerRole, pairsFor, requiredStatusNames, semanticStatusNames } from "../workflow/policy.js";
 import type { EntityKind } from "../workflow/policy.js";
 import type { EntityPolicy, Policy, TransitionRule } from "./types.js";
+import { OPERATIONS } from "./operations.js";
 
 const ENTITIES: EntityKind[] = ["task", "userstory", "epic"];
 // Mirrors the governed targets of policy.ts: every Task target, the Story ones that carry an artifact, the Epic card names.
@@ -22,5 +23,7 @@ function entityPolicy(entity: EntityKind): EntityPolicy {
 export const legacySeed = (): Policy => ({
   schemaVersion: 1,
   roles: ["gpt", "claude", "po"],
+  // The legacy code never checked the role of a plain write, so the seed lists every one of them for every role (the guards that follow still apply).
+  operations: Object.fromEntries(OPERATIONS.filter((o) => o.access === "write" && o.rule !== "workflow").map((o) => [o.id, ["gpt", "claude", "po"]])),
   entities: Object.fromEntries(ENTITIES.map((e) => [e, entityPolicy(e)])) as Policy["entities"],
 });
