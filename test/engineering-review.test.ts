@@ -16,7 +16,7 @@ const realFetch = globalThis.fetch;
 const env = { TAIGA_URL: "http://taiga.invalid", TAIGA_USERNAME: "u", TAIGA_PASSWORD: "p" };
 const saved: Record<string, string | undefined> = {};
 const STRICT = [[10, "Ready"], [11, "In Progress"], [12, "GPT Validation"], [13, "Done"], [14, "Human Decision"], [15, "Cancelled"]].map(([id, name], i) => ({ id, name, order: i + 1, is_closed: name === "Done" || name === "Cancelled" }));
-type Row = Record<string, any>;
+type Row = Record<string, unknown>;
 let world: { milestones: Row[]; stories: Row[]; tasks: Row[]; issues: Row[]; next: number; failReviewPost: boolean }, dir: string, requests: { method: string; path: string }[];
 
 beforeEach(() => {

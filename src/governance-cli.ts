@@ -13,7 +13,7 @@ function current(): boolean {
     return JSON.parse(readFileSync(file, "utf8"))?.enabled !== false;
   } catch (e) {
     if ((e as NodeJS.ErrnoException).code === "ENOENT") return true;
-    throw new Error(`governance file is not readable JSON: ${file}`);
+    throw new Error(`governance file is not readable JSON: ${file}`, { cause: e });
   }
 }
 

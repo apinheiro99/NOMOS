@@ -157,12 +157,14 @@ test("receipt binding: any wrong authorization/repository/branch/SHA fails close
 test("caller-asserted facts are not evidence: unsigned, plain-boolean, wrong-key and tampered receipts are refused", async () => {
   const r = await prepare();
   const good = RECEIPT(r.merge_authorization);
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars -- rest-omit
   const { signature, ...unsigned } = good;
   const other = newGitgate();
   const cases: [string, unknown][] = [
     ["unsigned", unsigned], ["signature removed", { ...good, signature: "" }], ["plain booleans only", { local_branch_removed: true, remote_branch_removed: true }],
     ["signed by the Taiga-style wrong key", RECEIPT(r.merge_authorization, {}, other)], ["field edited after signing", { ...good, final_integration_sha: "4".repeat(40) }],
-    ["cleanup flag flipped after signing", { ...good, remote_branch_removed: false }], ["extra field", { ...good, note: "x" }], ["missing cleanup field", (() => { const { remote_branch_removed, ...rest } = good; return rest; })()],
+    ["cleanup flag flipped after signing", { ...good, remote_branch_removed: false }], ["extra field", { ...good, note: "x" }], ["missing cleanup field", (() => { // eslint-disable-next-line @typescript-eslint/no-unused-vars -- rest-omit
+      const { remote_branch_removed, ...rest } = good; return rest; })()],
   ];
   for (const [name, receipt] of cases) assert.equal((await confirm(receipt)).code, "REFUSED", name);
   assert.equal(wikiWrites, 1, "only the prepare record was written");

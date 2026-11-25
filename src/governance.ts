@@ -13,6 +13,7 @@ import { closureFor, vocabulary, type EntityKind } from "./workflow/policy.js";
 import { BASE, STATUS_BASE, text, violation } from "./workflow/result.js";
 import { ensureEngineeringReview, keepCanonicalOrder } from "./workflow/engineering-review.js";
 import { SECTIONS } from "./description-sections.js";
+import type { ToolHandler, ToolRegister } from "./fields.js";
 
 // Workflow governance is ONE global runtime switch for the whole MCP, ON by default. State lives in governance.json at
 // the root of this MCP package (it travels with the MCP). The PO edits it by hand ({ "enabled": true|false }) or with the
@@ -41,6 +42,15 @@ export function loadGovernance(file = governanceFile()): GovernanceState {
   };
 }
 
+// The generic create/update/bulk tools are guarded here; Args names only the fields the guards read.
+type Args = {
+  id?: number; project?: number; project_id?: number; milestone?: number; kind?: string; container_id?: number;
+  status?: unknown; status_id?: number; description?: unknown; is_blocked?: boolean; blocked_note?: unknown; is_closed?: boolean;
+  taskboard_order?: unknown; bulk_tasks?: number[][];
+};
+type Stored = { project?: number; status?: number; is_blocked?: boolean; blocked_note?: unknown };
+type GovHandler = ToolHandler<Args>;
+
 // A missing file means ON; an unreadable or malformed one fails closed (startup error).
 function readGovernance(file: string): GovernanceState {
   let raw: string;
@@ -48,9 +58,9 @@ function readGovernance(file: string): GovernanceState {
     raw = readFileSync(file, "utf8");
   } catch (e) {
     if ((e as NodeJS.ErrnoException).code === "ENOENT") return { enabled: true };
-    throw new Error(`governance file unreadable: ${file}`);
+    throw new Error(`governance file unreadable: ${file}`, { cause: e });
   }
-  let parsed: any;
+  let parsed: { enabled?: unknown } | null;
   try {
     parsed = JSON.parse(raw);
   } catch {
@@ -85,8 +95,8 @@ const UPDATE_NOTE = " In a governed project the status field cannot be used here
 const BULK_CREATE = /^taiga_(epics|userstories|tasks)_bulk_create$/;
 const STATUS_BULK_NOTE = " In a governed project `status_id` is refused: new items start in their default status and move only through taiga_workflow_transition.";
 
-function guardBulkStatus(client: TaigaClient, state: GovernanceState, name: string, handler: any) {
-  return async (args: any, extra: any) => {
+function guardBulkStatus(client: TaigaClient, state: GovernanceState, name: string, handler: GovHandler): GovHandler {
+  return async (args, extra) => {
     if (!state.enabled || args.status_id === undefined) return handler(args, extra);
     if (BULK_CREATE.test(name)) return violation([STATUS_HINT]);
     const moved: number[] = [];
@@ -107,14 +117,14 @@ async function strictTaskProject(client: TaigaClient, project: number | undefine
   return project !== undefined && vocabulary("task", await client.get("/task-statuses", { project })).strict;
 }
 
-function guardTaskOrder(client: TaigaClient, state: GovernanceState, handler: any) {
-  return async (args: any, extra: any) =>
+function guardTaskOrder(client: TaigaClient, state: GovernanceState, handler: GovHandler): GovHandler {
+  return async (args, extra) =>
     state.enabled && (await strictTaskProject(client, args.project_id)) ? violation([ORDER_HINT]) : handler(args, extra);
 }
 
 // Sprint Engineering Review (Issue #250): in a governed project a new Sprint gets its FINAL review Story, and every Story change in a Sprint keeps it last.
 // The review step runs AFTER the tool persisted its change; if it fails the call is reported as a failure, never as a clean success.
-const sprintOf = (name: string, args: any, res: any): number | undefined =>
+const sprintOf = (name: string, args: Args, res: { id?: number; milestone?: number } & { milestone?: number }[]): number | undefined =>
   name === "taiga_milestones_create" ? res?.id
   : name === "taiga_userstories_create" ? args.milestone ?? res?.milestone
   : name === "taiga_userstories_update" ? res?.milestone
@@ -122,13 +132,13 @@ const sprintOf = (name: string, args: any, res: any): number | undefined =>
   : name === "taiga_move" && args.kind === "story_in_sprint" ? args.container_id
   : undefined;
 
-function withSprintReview(client: TaigaClient, state: GovernanceState, name: string, handler: any) {
+function withSprintReview(client: TaigaClient, state: GovernanceState, name: string, handler: GovHandler): GovHandler {
   if (!/^taiga_(milestones_create|userstories_(create|update|bulk_update_sprint_order)|move)$/.test(name)) return handler;
-  return async (args: any, extra: any) => {
+  return async (args, extra) => {
     const result = await handler(args, extra);
     if (!state.enabled || result?.isError) return result;
-    let parsed: any;
-    try { parsed = JSON.parse(result.content[0].text); } catch { return result; }
+    let parsed: Parameters<typeof sprintOf>[2];
+    try { parsed = JSON.parse(result.content?.[0]?.text as string); } catch { return result; }
     const sprint = sprintOf(name, args, parsed);
     if (sprint === undefined) return result;
     try {
@@ -144,14 +154,14 @@ function withSprintReview(client: TaigaClient, state: GovernanceState, name: str
 }
 
 // Issue -> Sprint hygiene at the promotion boundary: the source Issue is known here, so a missing Sprint association is surfaced with the result.
-function withPromoteHygiene(client: TaigaClient, state: GovernanceState, name: string, handler: any) {
+function withPromoteHygiene(client: TaigaClient, state: GovernanceState, name: string, handler: GovHandler): GovHandler {
   if (name !== "taiga_issues_promote_to_userstory") return handler;
-  return async (args: any, extra: any) => {
+  return async (args, extra) => {
     const result = await handler(args, extra);
     if (!state.enabled || result?.isError) return result;
     const issue = (await client.get(`/issues/${args.id}`)) as { milestone?: number | null };
     if (issue.milestone != null) return result;
-    return text({ ...JSON.parse(result.content[0].text), sprint_hygiene: { issue: args.id, finding: "issue_without_sprint", reminder: "The source Issue has no Sprint: associate it with the Sprint that will hold the generated Story." } });
+    return text({ ...JSON.parse(result.content?.[0]?.text as string), sprint_hygiene: { issue: args.id, finding: "issue_without_sprint", reminder: "The source Issue has no Sprint: associate it with the Sprint that will hold the generated Story." } });
   };
 }
 
@@ -160,8 +170,8 @@ const COMMENT_NOTE = " In a Task of a project with the strict workflow vocabular
 
 // Free Task comments are an alternate path around the typed hand-off, so they are closed under governance.
 // Allowed: governance OFF, a project without the workflow vocabulary, or an authenticated PO/admin (maintenance).
-function guardTaskComment(client: TaigaClient, state: GovernanceState, identity: WorkflowIdentity, op: "create" | "delete", handler: any) {
-  return async (args: any, extra: any) => {
+function guardTaskComment(client: TaigaClient, state: GovernanceState, identity: WorkflowIdentity, op: "create" | "delete", handler: GovHandler): GovHandler {
+  return async (args, extra) => {
     if (!state.enabled) return handler(args, extra);
     const task = (await client.get(`/tasks/${args.id}`)) as { project?: number };
     const vocab = vocabulary("task", task.project === undefined ? undefined : await client.get("/task-statuses", { project: task.project }));
@@ -172,11 +182,11 @@ function guardTaskComment(client: TaigaClient, state: GovernanceState, identity:
 }
 
 // After a Task enters execution its contract (description) is not rewritten by agents; the PO/admin may amend it.
-async function descriptionLock(client: TaigaClient, stored: any, identity: WorkflowIdentity): Promise<string[]> {
+async function descriptionLock(client: TaigaClient, stored: Stored | undefined, identity: WorkflowIdentity): Promise<string[]> {
   if (!stored || identity.actor?.role === "po") return [];
   const vocab = vocabulary("task", stored.project === undefined ? undefined : await client.get("/task-statuses", { project: stored.project }));
   if (!vocab.strict) return [];
-  const status = vocab.nameById.get(stored.status);
+  const status = vocab.nameById.get(stored.status as number);
   const locked = status === "in progress" || status === "gpt validation" || status === "request";
   if (identity.actor?.role === "claude" || (locked && identity.mode === "syntactic") || (locked && identity.actor?.role === "gpt")) {
     return [`the Task description is the execution contract and cannot be changed by ${identity.actor?.role ?? "an unauthenticated caller"} while the Task is "${status}": return it to a non-execution status first, or ask the PO to amend it`];
@@ -191,7 +201,7 @@ const CLOSURE_PROBLEM = "is_closed cannot be set directly in a governed workflow
 
 // Direct closure mutation would let an item be closed while its status is still open (the hybrid state). It is refused for Stories and Tasks
 // of a project that exposes the strict vocabulary; non-strict projects and Epics keep their legacy behaviour.
-async function closureBypass(client: TaigaClient, family: string, verb: string, args: any, stored: any): Promise<string[]> {
+async function closureBypass(client: TaigaClient, family: string, verb: string, args: Args, stored: Stored | undefined): Promise<string[]> {
   const entity = CLOSURE_ENTITY[family];
   if (!entity || args.is_closed === undefined) return [];
   const project = verb === "update" ? stored?.project : args.project;
@@ -202,8 +212,8 @@ async function closureBypass(client: TaigaClient, family: string, verb: string, 
 
 // Wraps the generic Epic/Story/Task create/update tools: a governed project is validated before the handler runs.
 export function addGovernance(server: McpServer, client: TaigaClient, state: GovernanceState, identity: WorkflowIdentity = { mode: "syntactic", actor: null }): void {
-  const register = server.tool.bind(server) as (...args: any[]) => unknown;
-  (server as any).tool = (name: string, description: string, schema: any, rawHandler: any) => {
+  const register = server.tool.bind(server) as unknown as ToolRegister<Args>;
+  (server as unknown as { tool: ToolRegister<Args> }).tool = (name, description, schema, rawHandler) => {
     const handler = withPromoteHygiene(client, state, name, withSprintReview(client, state, name, rawHandler));
     if (name === "taiga_tasks_bulk_update_taskboard_order") {
       return register(name, description + ORDER_NOTE, schema, guardTaskOrder(client, state, guardBulkStatus(client, state, name, handler)));
@@ -216,9 +226,9 @@ export function addGovernance(server: McpServer, client: TaigaClient, state: Gov
     const m = FAMILY.exec(name);
     if (!m) return register(name, description, schema, handler);
     const [, family, verb] = m;
-    const wrapped = async (args: any, extra: any) => {
+    const wrapped: GovHandler = async (args, extra) => {
       if (!state.enabled) return handler(args, extra);
-      const stored: any = verb === "update" ? await client.get(`/${PATH[family]}/${args.id}`) : undefined;
+      const stored: Stored | undefined = verb === "update" ? (await client.get(`/${PATH[family]}/${args.id}`)) as Stored : undefined;
       const problems: string[] = [];
       if (typeof args.description === "string") {
         const found = descriptionSections(args.description);
@@ -311,7 +321,7 @@ export function registerGovernanceTools(server: McpServer, client: TaigaClient, 
       }
       const item = (await client.get(`/${base}/${id}`)) as { milestone?: number | null; status?: number; project?: number };
       if (governed) {
-        const typed = await strictTransition(client, identity, { entity, id, status, author, comment: rawComment, artifact, mergeContext: merge_context, model, effort }, item as any);
+        const typed = await strictTransition(client, identity, { entity, id, status, author, comment: rawComment, artifact, mergeContext: merge_context, model, effort }, item);
         if (typed) return typed;
       } else if (artifact !== undefined) {
         // Governance OFF is globally free: the legacy comment path applies.

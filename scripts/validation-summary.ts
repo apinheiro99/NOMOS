@@ -7,6 +7,7 @@ import { dirname, join } from "node:path";
 const [logPath, outDir = dirname(logPath ?? ".")] = process.argv.slice(2);
 if (!logPath) { console.error("usage: validation-summary.ts <tap-log> [out-dir]"); process.exit(2); }
 
+// eslint-disable-next-line no-control-regex -- ESC is the point: this strips ANSI colour codes
 const ANSI = /\x1b\[[0-9;]*[A-Za-z]/g;
 const text = existsSync(logPath) ? readFileSync(logPath, "utf8").replace(ANSI, "") : "";
 const totals = { tests: 0, pass: 0, fail: 0, cancelled: 0, skipped: 0, todo: 0 };

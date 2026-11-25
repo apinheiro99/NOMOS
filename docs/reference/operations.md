@@ -70,15 +70,15 @@ docker compose up --build
 ### Local Development
 
 ```bash
-pnpm install
-pnpm run dev
+npm install
+npm run dev
 ```
 
 ### Build
 
 ```bash
-pnpm run build
-pnpm start
+npm run build
+npm start
 ```
 
 ## Executable workflow contract

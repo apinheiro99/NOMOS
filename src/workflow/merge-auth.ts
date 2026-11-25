@@ -13,8 +13,8 @@ export interface MergeEnvelope { version: 1; claims: MergeClaims; signature: str
 export interface Signer { privateKey: KeyObject; keyId: string }
 
 const SHA = /^[0-9a-f]{40}$/;
-const BRANCH = /^(?!.*\.\.)[A-Za-z0-9._\/-]{1,200}$/;
-const REPOSITORY = /^[A-Za-z0-9._\/-]{1,200}$/;
+const BRANCH = /^(?!.*\.\.)[A-Za-z0-9._/-]{1,200}$/;
+const REPOSITORY = /^[A-Za-z0-9._/-]{1,200}$/;
 const PREFIX = { "task-done": "task", "story-done": "story", "sprint-done": "sprint" } as const;
 const ACTION: Record<WorkItemIdentity["kind"], MergeAction> = { task: "task-done", userstory: "story-done", sprint: "sprint-done" };
 const WORD = { task: "Task", userstory: "Story", sprint: "Sprint" } as const;

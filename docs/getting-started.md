@@ -3,7 +3,7 @@
 ## Prerequisites
 
 - A running [Taiga](https://taiga.io) instance and one Taiga account per actor (`po`, `claude`, `gpt`)
-- Node.js 24+ and [pnpm](https://pnpm.io)
+- Node.js 24+
 - An MCP-compatible client (Claude Code, ChatGPT through a tunnel, Claude Desktop, ...)
 
 ## Install from source
@@ -11,8 +11,8 @@
 ```bash
 git clone <your-repository-url> taiga-mcp
 cd taiga-mcp
-pnpm install --frozen-lockfile
-pnpm run build
+npm ci
+npm run build
 cp .env.example .env     # fill in your own values; never commit .env
 ```
 

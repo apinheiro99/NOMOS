@@ -20,8 +20,8 @@ const USERS = [{ id: 71, username: "chatgpt", is_active: true }, { id: 72, usern
 
 const realFetch = globalThis.fetch;
 const saved: Record<string, string | undefined> = {};
-type Row = Record<string, any>;
-let world: { tasks: Row[]; stories: Row[]; users: Row[]; next: number; writes: { method: string; path: string; body: any }[]; ignoreAssignee: boolean; afterCreate?: (row: Row) => void };
+type Row = Record<string, unknown>;
+let world: { tasks: Row[]; stories: Row[]; users: Row[]; next: number; writes: { method: string; path: string; body: unknown }[]; ignoreAssignee: boolean; afterCreate?: (row: Row) => void };
 let dir: string;
 
 beforeEach(() => {
@@ -63,6 +63,7 @@ beforeEach(() => {
     }
     if (method === "PATCH" && (m = /^\/(tasks|userstories)\/(\d+)$/.exec(path))) {
       const row = (m[1] === "tasks" ? world.tasks : world.stories).find((r) => r.id === Number(m![2]))!;
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars -- rest-omit
       const { version, ...rest } = body;
       if (world.ignoreAssignee) delete rest.assigned_to;
       Object.assign(row, rest, { version: row.version + 1 });
@@ -131,7 +132,7 @@ test("backfill repairs only wrong or empty owners, ignores watchers, skips close
   world.tasks.push({ id: 3, ref: 377, version: 2, status: 1, assigned_to: null, watchers: [72] }, { id: 4, ref: 378, version: 2, status: 2, assigned_to: 71 }, { id: 5, ref: 379, version: 2, status: 4, assigned_to: 73 }, { id: 6, ref: 380, version: 2, status: 5, assigned_to: null });
   const dry = await backfillSprintAssignees(new TaigaClient(), 187, true);
   assert.equal(world.writes.length, 0, "dry run writes nothing");
-  assert.deepEqual(dry.updated.map((u: any) => u.ref), [370, 377, 378]);
+  assert.deepEqual(dry.updated.map((u: { ref: number }) => u.ref), [370, 377, 378]);
   const first = await backfillSprintAssignees(new TaigaClient(), 187, false);
   assert.deepEqual([first.updated.length, first.already_correct, first.skipped, first.failed.length], [3, 1, 2, 0]);
   assert.deepEqual([world.stories[0].assigned_to, world.tasks[0].assigned_to, world.tasks[1].assigned_to], [71, 71, 72], "targets come from the status, not the watchers or the old assignee");

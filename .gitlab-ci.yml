@@ -14,18 +14,16 @@ stages:
 default:
   tags:
     - scope
-  # The pnpm store is keyed by the lockfile: every job reuses it instead of downloading the dependencies again.
+  # The npm download cache is keyed by the lockfile: every job reuses it instead of downloading the dependencies again.
   cache:
     key:
       files:
-        - pnpm-lock.yaml
+        - package-lock.json
     paths:
-      - .pnpm-store/
+      - .npm/
     policy: pull-push
   before_script:
-    - npm install -g pnpm@10.34.0 --no-audit --no-fund
-    - pnpm config set store-dir .pnpm-store
-    - pnpm install --frozen-lockfile
+    - npm ci --cache .npm --prefer-offline --no-audit --no-fund
 
 .branch-push-only:
   rules:
@@ -47,7 +45,15 @@ default:
     - .validation-summary
   stage: validate
   script:
-    - node scripts/ci-gate.ts "Public Release Check" pnpm run check:public-surface
+    - node scripts/ci-gate.ts "Public Release Check" npm run check:public-surface
+
+"Lint":
+  extends:
+    - .branch-push-only
+    - .validation-summary
+  stage: validate
+  script:
+    - node scripts/ci-gate.ts "Lint" npm run lint
 
 "Type Check":
   extends:
@@ -55,7 +61,7 @@ default:
     - .validation-summary
   stage: validate
   script:
-    - node scripts/ci-gate.ts "Type Check" pnpm run typecheck
+    - node scripts/ci-gate.ts "Type Check" npm run typecheck
 
 # The suite is split in three named groups so the jobs run in parallel instead of one ~2 minute job.
 .tests:
@@ -67,19 +73,19 @@ default:
 "Tests: Workflow":
   extends: .tests
   script:
-    - pnpm run build
+    - npm run build
     - 'node scripts/ci-gate.ts "Tests: Workflow" node scripts/run-tests.ts workflow'
 
 "Tests: Tools":
   extends: .tests
   script:
-    - pnpm run build
+    - npm run build
     - 'node scripts/ci-gate.ts "Tests: Tools" node scripts/run-tests.ts tools'
 
 "Tests: Core":
   extends: .tests
   script:
-    - pnpm run build
+    - npm run build
     - 'node scripts/ci-gate.ts "Tests: Core" node scripts/run-tests.ts core'
 
 "Package Check":
@@ -88,7 +94,7 @@ default:
     - .validation-summary
   stage: validate
   script:
-    - node scripts/ci-gate.ts "Package Check" pnpm run check:package
+    - node scripts/ci-gate.ts "Package Check" npm run check:package
 
 "Release Check":
   extends:
@@ -96,7 +102,7 @@ default:
     - .validation-summary
   stage: validate
   script:
-    - node scripts/ci-gate.ts "Release Check" pnpm run check:release
+    - node scripts/ci-gate.ts "Release Check" npm run check:release
 
 .ci-tag:
   stage: tag
@@ -141,6 +147,7 @@ ci-tag-red:
     - if: '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
   needs:
     - "Public Release Check"
+    - "Lint"
     - "Type Check"
     - "Tests: Workflow"
     - "Tests: Tools"
@@ -150,7 +157,7 @@ ci-tag-red:
   script:
     # The release identity is the version the green tag job gives this very pipeline (same grammar as .ci-tag).
     - VERSION="v$(date -u -d "$CI_PIPELINE_CREATED_AT" +%Y.%m).$(printf "%06d" "$CI_PIPELINE_IID")"
-    - pnpm run build
+    - npm run build
     - node scripts/release.ts build --build-id "$VERSION" --repository-commit "$CI_COMMIT_SHA" --out release
     - node scripts/release.ts verify --out release
   artifacts:

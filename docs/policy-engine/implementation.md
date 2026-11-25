@@ -46,7 +46,7 @@
 - Cutover reprovado: seção §7.
 
 ## 3. Checklist mestre (marcar aqui; é o único tracker)
-- [ ] F0 baseline+topologia+CI  - [ ] F1 oráculo+evaluator+fixture  - [ ] F2 PG+residente+API  - [ ] F3 catálogo+PEP+mirror+lifecycle  - [ ] F3b matriz v2 (lab)  - [ ] F4 UI 8 telas  - [ ] F5 release+cutover+hardening
+- [x] F0 baseline+topologia+CI  - [ ] F1 oráculo+evaluator+fixture  - [ ] F2 PG+residente+API  - [ ] F3 catálogo+PEP+mirror+lifecycle  - [ ] F3b matriz v2 (lab)  - [ ] F4 UI 8 telas  - [ ] F5 release+cutover+hardening
 
 ## 4. Estrutura-alvo de arquivos (nomes finais; ajustar só com justificativa registrada)
 ```
