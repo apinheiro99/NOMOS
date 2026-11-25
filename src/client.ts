@@ -148,7 +148,7 @@ export class TaigaClient {
 
     if (!res.ok) {
       const text = await res.text();
-      throw safeApiError(`Taiga API error ${res.status} ${method} ${path}`, text);
+      throw Object.assign(safeApiError(`Taiga API error ${res.status} ${method} ${path}`, text), { status: res.status });
     }
 
     // Some Taiga actions (e.g. delete_comment) answer 200 with an empty body.

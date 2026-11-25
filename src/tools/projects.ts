@@ -47,7 +47,7 @@ export function registerProjectTools(server: McpServer, client: TaigaClient, ide
       is_private: z.boolean().optional(),
       total_milestones: z.number().optional(),
       total_story_points: z.number().optional(),
-      request_key: z.string().min(8).max(100).optional().describe("Idempotency key for a policy-engine MCP: a retry with the same key and the same request returns the same project instead of creating another"),
+      request_key: z.string().min(8).max(100).optional().describe("Required when the policy engine is on: a stable idempotency key; a retry with the same key and the same request returns the same project instead of creating another"),
       apply_profile: z.boolean().optional().describe("Default true: right after creation, bring the project to the canonical SCOPE profile (statuses, colours, types, priorities, severities) and make it UUID-ready. Set false for a raw Taiga default project."),
     },
     async ({ apply_profile, request_key, ...params }) => {
@@ -63,9 +63,11 @@ export function registerProjectTools(server: McpServer, client: TaigaClient, ide
       const text = (body: unknown) => ({ content: [{ type: "text" as const, text: JSON.stringify(body) }] });
       if (runtime) {
         // A project born under the policy engine is bound (and gets its first policy) before it is reported; the intent is recorded first.
+        // Without a stable key a retry could not be told from a new request, so the key is required (Geewax: request deduplication).
+        if (!request_key) throw new Error("request_key is required when the policy engine is on: reuse the same key to retry this exact request");
         let made: Awaited<ReturnType<typeof make>> | undefined;
         const out = await runtime.provision(
-          { principal: identity.actor?.role ?? "unauthenticated", requestKey: request_key ?? `auto-${Date.now()}-${Math.random().toString(36).slice(2)}`, requestHash: policyHash({ apply_profile, ...params } as never) },
+          { principal: identity.actor?.role ?? "unauthenticated", requestKey: request_key, requestHash: policyHash({ apply_profile, ...params } as never) },
           async () => {
             made = await make();
             const row = made.data as { id: number; slug: string; name: string };

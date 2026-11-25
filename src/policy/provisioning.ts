@@ -21,12 +21,19 @@ export async function provisionProject(
     const prior = (await pool.query<{ request_hash: string; phase: string; external_project_id: string | null }>("SELECT request_hash, phase, external_project_id FROM provisioning_intent WHERE instance_id = $1 AND request_key = $2", [instance, a.requestKey])).rows[0];
     if (prior.request_hash !== a.requestHash) throw new PolicyError(409, "request_key_reused", "this request key was used for a different project request");
     if (prior.phase === "bound") return { id: Number(prior.external_project_id), replay: true };
-    throw new PolicyError(409, "outcome_unknown", `an earlier attempt with this request key stopped at "${prior.phase}"; check Taiga for the project before retrying with a new key`);
+    throw new PolicyError(409, "outcome_unknown", `an earlier attempt with this request key stopped at "${prior.phase}"${prior.phase === "failed" ? " (Taiga rejected it)" : "; its outcome is unknown"}: check Taiga for the project before retrying with a new key`);
   }
   const set = (phase: string, project: number | null, evidence: object) =>
     pool.query("UPDATE provisioning_intent SET phase = $2, external_project_id = coalesce($3, external_project_id), evidence = $4, updated_at = now() WHERE id = $1", [intent, phase, project, JSON.stringify(evidence)]);
   let made;
-  try { made = await create(); } catch (e) { await set("failed", null, { error: (e as Error).message }); throw e; }
+  // Only an answer from Taiga that rejects the request (4xx) proves nothing was created. A timeout, a dropped connection or a 5xx may hide a
+  // project that exists: the intent stays open, and the key is never re-run (Kleppmann: a timeout is an unknown outcome).
+  try { made = await create(); } catch (e) {
+    const status = (e as { status?: number }).status;
+    if (typeof status === "number" && status >= 400 && status < 500) await set("failed", null, { error: (e as Error).message });
+    else await set("intent", null, { error: (e as Error).message, note: "outcome unknown: check Taiga for the project before any retry" });
+    throw e;
+  }
   await set("created", made.id, {});
   try {
     await bindProject(pool, instance, undefined, { taigaProjectId: made.id, slug: made.slug, name: made.name, ...plan(undefined, made.seen) }, made.seen);
