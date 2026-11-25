@@ -3,13 +3,13 @@ import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/
 import { isHostAllowed, isLoopback, isOriginAllowed } from "./config.js";
 import { TaigaClient } from "./client.js";
 import { createTaigaMcpServer } from "./server.js";
-import { actorFromAuthorization, loadActorConfig, type ActorConfig, type WorkflowIdentity } from "./workflow/actor.js";
+import { actorFromAuthorization, loadActorConfig, type ActorConfig, type ActorRole, type WorkflowIdentity } from "./workflow/actor.js";
 
 type HttpConfig = { host: string; port: number; path: string; allowedOrigins?: string[] };
 
-// Stateless Streamable HTTP: every POST gets its own McpServer + transport, sharing one TaigaClient
-// so the Taiga auth token is reused. No sessions, no SSE stream (GET/DELETE answer 405).
-export function startHttpServer(config: HttpConfig, client: TaigaClient = new TaigaClient(), actors: ActorConfig = loadActorConfig()): Promise<Server> {
+// Stateless Streamable HTTP: every POST gets its own McpServer + transport. Authenticated callers use the TaigaClient of their own
+// actor (one Taiga account each), so the token is reused per actor. No sessions, no SSE stream (GET/DELETE answer 405).
+export function startHttpServer(config: HttpConfig, clients: TaigaClient | Map<ActorRole, TaigaClient> = new TaigaClient(), actors: ActorConfig = loadActorConfig()): Promise<Server> {
   // Any configured actor token turns inbound authentication ON for every request; a fixed stdio actor makes no sense here.
   if (actors.stdioActor) throw new Error("TAIGA_MCP_ACTOR is for stdio only; HTTP callers are identified by TAIGA_MCP_GPT_TOKEN / TAIGA_MCP_CLAUDE_TOKEN / TAIGA_MCP_PO_TOKEN bearer tokens");
   const authenticated = actors.tokens.size > 0;
@@ -38,6 +38,11 @@ export function startHttpServer(config: HttpConfig, client: TaigaClient = new Ta
         return;
       }
       identity = { mode: "authenticated", actor };
+    }
+    const client = clients instanceof Map ? clients.get(identity.actor?.role as ActorRole) : clients;
+    if (!client) {
+      res.writeHead(500, { "content-type": "text/plain" }).end("Internal error");
+      return;
     }
     const server = createTaigaMcpServer(client, identity);
     const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined, enableJsonResponse: true });

@@ -4,11 +4,17 @@ import { createTaigaMcpServer } from "./server.js";
 import { fatalMessage } from "./errors.js";
 import { parseTransportConfig } from "./config.js";
 import { startHttpServer } from "./http.js";
+import { loadActorConfig } from "./workflow/actor.js";
+import { loadActorClients, verifyActorAccounts } from "./workflow/actor-clients.js";
 
 async function main() {
   const config = parseTransportConfig();
   if (config.transport === "http") {
-    await startHttpServer(config);
+    const actors = loadActorConfig();
+    // With actor tokens configured every actor has its own Taiga account; without tokens (local development) one shared session serves all.
+    const clients = actors.tokens.size ? loadActorClients(actors) : undefined;
+    if (clients) await verifyActorAccounts(clients);
+    await startHttpServer(config, clients, actors);
     console.error(`taiga-mcp listening on http://${config.host}:${config.port}${config.path}`);
     return;
   }
