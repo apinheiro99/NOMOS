@@ -33,13 +33,14 @@ export function plan(existing: Existing | undefined, seen: Seen | undefined): { 
       return { action: existing.slug === seen.slug && existing.name === seen.name && existing.fingerprint === seen.fingerprint && existing.uuidReady === seen.uuidReady ? "none" : "refresh", lifecycle: "managed" };
     case "drift": return seen.eligible && existing.hasPolicy && existing.fingerprint === seen.fingerprint ? { action: "recover", lifecycle: "managed" } : { action: "none", lifecycle: "drift" };
     default: // pending, inaccessible with a policy, or a binding that never got its first policy
-      if (existing.hasPolicy) return seen.eligible ? { action: "recover", lifecycle: "managed" } : { action: "mark_drift", lifecycle: "drift" };
+      // Coming back (e.g. from inaccessible) is only a recovery when Taiga is still what the policy was bound to.
+      if (existing.hasPolicy) return seen.eligible && (existing.fingerprint === null || existing.fingerprint === seen.fingerprint) ? { action: "recover", lifecycle: "managed" } : { action: "mark_drift", lifecycle: "drift" };
       return seen.eligible ? { action: "create_managed", lifecycle: "managed" } : { action: "create_legacy", lifecycle: "legacy" };
   }
 }
 
 // The fingerprint covers only what the policy depends on: each status (id, normalized name, closed flag) of every governed entity and the project's
-// default status for new Stories and Tasks. Colours, order, slug and name are cosmetic and never move it.
+// default status for new Stories and Tasks, the project's roles (id, name) and the id of each UUID attribute definition. Colours, order, slug and name are cosmetic and never move it.
 export async function inspect(client: TaigaClient, row: { id: number; slug: string; name: string; default_us_status?: number | null; default_task_status?: number | null }): Promise<Seen> {
   const relevant: Record<string, unknown> = { defaults: [row.default_us_status ?? null, row.default_task_status ?? null] };
   let strict = false;
@@ -50,8 +51,11 @@ export async function inspect(client: TaigaClient, row: { id: number; slug: stri
     if (entity === "task") { const v = vocabulary("task", statuses); strict = v.strict && v.broken.length === 0; }
   }
   // Duplicate or missing UUID definitions make the project "not UUID-ready"; governed writes need UUIDs, so such a project is not eligible.
-  const ready = await Promise.all(UUID_KINDS.map((k) => uuidAttributeId(client, k, row.id, false).then((id) => id !== undefined, () => false)));
-  const uuidReady = ready.every(Boolean);
+  const defs = await Promise.all(UUID_KINDS.map((k) => uuidAttributeId(client, k, row.id, false).catch(() => undefined)));
+  const uuidReady = defs.every((d) => d !== undefined);
+  relevant.uuidDefinitions = defs.map((d) => d ?? null);
+  const roles = await client.get("/roles", { project: row.id });
+  relevant.roles = ((Array.isArray(roles) ? roles : []) as { id?: number; name?: string }[]).map((r) => [r.id, norm(String(r.name ?? ""))]).sort((a, b) => Number(a[0]) - Number(b[0]));
   return { id: row.id, slug: row.slug, name: row.name, eligible: strict && uuidReady, fingerprint: createHash("sha256").update(JSON.stringify(relevant)).digest("hex"), uuidReady };
 }
 

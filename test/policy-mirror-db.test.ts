@@ -21,6 +21,7 @@ const fake = () => ({
     if (path === "/task-statuses") return names.map((name, id) => ({ id: id + 1, name }));
     if (path === "/userstory-statuses") return STORY.map((name, id) => ({ id: id + 1, name }));
     if (path === "/epic-statuses") return [{ id: 1, name: "New" }, { id: 2, name: "Done" }];
+    if (path === "/roles") return [{ id: 1, name: "Product Owner" }];
     if (/custom-attributes$/.test(path)) return world.dupUuid.includes(params.project) ? [{ id: 1, name: "UUID" }, { id: 2, name: "uuid" }] : [{ id: 1, name: "UUID" }];
     throw new Error(`unexpected ${path}`);
   },
@@ -147,8 +148,28 @@ test("provisioning: intent -> created -> bound, a retry with the same key answer
   assert.equal(created, 1);
   await assert.rejects(runtime.provision({ ...a, requestHash: "h2" }, create), /request_key_reused|different project request/);
   const boom = { principal: "po", requestKey: "key-bbbbbbbb", requestHash: "h3" };
-  await assert.rejects(runtime.provision(boom, async () => { throw new Error("taiga down"); }), /taiga down/);
-  await assert.rejects(runtime.provision(boom, create), /stopped at "failed"/);
-  assert.equal(created, 1, "the failed request was not run again");
-  assert.deepEqual((await pool.query("SELECT request_key, phase FROM provisioning_intent ORDER BY request_key")).rows, [{ request_key: "key-aaaaaaaa", phase: "bound" }, { request_key: "key-bbbbbbbb", phase: "failed" }]);
+  // Taiga rejected it (4xx): nothing was created, the failure is confirmed.
+  await assert.rejects(runtime.provision(boom, async () => { throw Object.assign(new Error("rejected"), { status: 400 }); }), /rejected/);
+  await assert.rejects(runtime.provision(boom, create), /Taiga rejected it/);
+  // A timeout or a 5xx may hide a created project: the outcome is unknown and the key is never re-run.
+  const lost = { principal: "po", requestKey: "key-cccccccc", requestHash: "h4" };
+  await assert.rejects(runtime.provision(lost, async () => { throw new Error("fetch failed"); }), /fetch failed/);
+  await assert.rejects(runtime.provision(lost, create), /outcome is unknown/);
+  assert.equal(created, 1, "neither request was run again");
+  assert.deepEqual((await pool.query("SELECT request_key, phase FROM provisioning_intent ORDER BY request_key")).rows, [{ request_key: "key-aaaaaaaa", phase: "bound" }, { request_key: "key-bbbbbbbb", phase: "failed" }, { request_key: "key-cccccccc", phase: "intent" }]);
+});
+
+test("a managed project that was inaccessible comes back only to the fingerprint it was bound to; roles and UUID definitions are part of it", async () => {
+  const base = { id: 77, slug: "p", name: "P" };
+  reset({ projects: [base], statuses: { 77: TASK } });
+  await sync();
+  assert.equal((await rows()).find((r: { id: number }) => r.id === 77).lifecycle, "managed");
+  reset({ projects: [] });
+  assert.deepEqual((await sync()).items.filter((i) => i.taigaProjectId === 77).map((i) => i.action), ["mark_inaccessible"]);
+  // Back, but a role was added in the meantime: not the bound fingerprint, so it is drift, never a silent recovery.
+  reset({ projects: [base], statuses: { 77: TASK } });
+  const original = fake();
+  const withRole = { ...original, get: async (path: string, params: { project: number }) => path === "/roles" ? [{ id: 1, name: "Product Owner" }, { id: 2, name: "Extra" }] : (original as never as { get: (p: string, q: { project: number }) => Promise<unknown> }).get(path, params) };
+  assert.deepEqual((await mirrorProjects(pool, withRole as never, BASE, { apply: true })).items.filter((i) => i.taigaProjectId === 77).map((i) => i.action), ["mark_drift"]);
+  assert.equal((await rows()).find((r: { id: number }) => r.id === 77).lifecycle, "drift");
 });
