@@ -7,6 +7,7 @@ import { registerWorkflowTools } from "./workflow/tools.js";
 import { registerAssignmentTools } from "./workflow/assignment-tools.js";
 import { registerContinuationTools } from "./workflow/continuation-tools.js";
 import { loadTemplates } from "./workflow/templates.js";
+import type { PolicyRuntime } from "./policy/runtime.js";
 
 import { registerProjectTools } from "./tools/projects.js";
 import { registerEpicTools } from "./tools/epics.js";
@@ -30,7 +31,7 @@ import { registerExportImportTools } from "./tools/export-import.js";
 
 
 // `identity` is resolved by the transport (HTTP bearer token) or from TAIGA_MCP_ACTOR (stdio); without either it is syntactic.
-export function createTaigaMcpServer(client: TaigaClient = new TaigaClient(), identity: WorkflowIdentity = identityFromEnv()): McpServer {
+export function createTaigaMcpServer(client: TaigaClient = new TaigaClient(), identity: WorkflowIdentity = identityFromEnv(), runtime?: PolicyRuntime): McpServer {
   const server = new McpServer({
     name: "taiga-mcp",
     version: "1.0.0",
@@ -62,8 +63,8 @@ export function createTaigaMcpServer(client: TaigaClient = new TaigaClient(), id
   registerResolverTools(server, client);
   registerWebhookTools(server, client);
   registerExportImportTools(server, client);
-  registerGovernanceTools(server, client, governance, identity);
-  registerWorkflowTools(server, client, identity, governance);
+  registerGovernanceTools(server, client, governance, identity, runtime);
+  registerWorkflowTools(server, client, identity, governance, runtime);
   registerContinuationTools(server, client, identity);
   registerAssignmentTools(server, client);
 

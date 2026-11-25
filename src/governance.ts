@@ -8,6 +8,7 @@ import { postComment, signComment } from "./comment.js";
 import type { WorkflowIdentity } from "./workflow/actor.js";
 import { authorShape } from "./workflow/tools.js";
 import { closureIntegrityFailure, resolveStatusRef, strictTransition } from "./workflow/transition.js";
+import type { PolicyRuntime } from "./policy/runtime.js";
 import { moveClosedStoryToTail } from "./workflow/story-order.js";
 import { closureFor, vocabulary, type EntityKind } from "./workflow/policy.js";
 import { BASE, STATUS_BASE, text, violation } from "./workflow/result.js";
@@ -283,7 +284,7 @@ function latestComment(history: HistoryItem[]): string | undefined {
   return pick.comment;
 }
 
-export function registerGovernanceTools(server: McpServer, client: TaigaClient, state: GovernanceState, identity: WorkflowIdentity = { mode: "syntactic", actor: null }): void {
+export function registerGovernanceTools(server: McpServer, client: TaigaClient, state: GovernanceState, identity: WorkflowIdentity = { mode: "syntactic", actor: null }, runtime?: PolicyRuntime): void {
   server.tool(
     "taiga_governance_status",
     "Read-only: whether workflow governance is ON for this whole MCP (ON by default). It is changed only by the local admin CLI, never through the MCP.",
@@ -321,7 +322,7 @@ export function registerGovernanceTools(server: McpServer, client: TaigaClient, 
       }
       const item = (await client.get(`/${base}/${id}`)) as { milestone?: number | null; status?: number; project?: number };
       if (governed) {
-        const typed = await strictTransition(client, identity, { entity, id, status, author, comment: rawComment, artifact, mergeContext: merge_context, model, effort }, item);
+        const typed = await strictTransition(client, identity, { entity, id, status, author, comment: rawComment, artifact, mergeContext: merge_context, model, effort }, item, undefined, runtime);
         if (typed) return typed;
       } else if (artifact !== undefined) {
         // Governance OFF is globally free: the legacy comment path applies.

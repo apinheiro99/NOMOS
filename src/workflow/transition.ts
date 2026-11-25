@@ -6,6 +6,8 @@ import { projectResolver, renderGovernedArtifact } from "./refs.js";
 import { analyse, orderedComments, UnsupportedArtifactError, type HistoryItem } from "./state.js";
 import { latest, loadTemplates, nameFor, TemplateError } from "./templates.js";
 import { actionsFor, closureFor, integrityMessage, norm, resolveTransition, vocabulary, type EntityKind } from "./policy.js";
+import { allowedActions, evaluate } from "../policy/evaluator.js";
+import type { ManagedPolicy, PolicyRuntime } from "../policy/runtime.js";
 import { rejection } from "./reject.js";
 import { bindingRejection } from "./account-binding.js";
 import { assigneeProblem, resolveAssignee } from "./assignment.js";
@@ -87,7 +89,7 @@ async function mergeIdentity(client: TaigaClient, kind: "task" | "userstory", it
 
 // Strict profile transition: actor/state matrix + typed artifact. Returns null when the generic (legacy) path applies.
 // Every rejection happens before any Taiga mutation; the artifact is posted first, proven in history, then the status moves.
-export async function strictTransition(client: TaigaClient, identity: WorkflowIdentity, a: TransitionArgs, item: Item, sign: typeof signMergeAuthorization = signMergeAuthorization): Promise<ToolResult | null> {
+export async function strictTransition(client: TaigaClient, identity: WorkflowIdentity, a: TransitionArgs, item: Item, sign: typeof signMergeAuthorization = signMergeAuthorization, runtime?: PolicyRuntime): Promise<ToolResult | null> {
   const statuses = item.project === undefined ? undefined : await client.get(`/${STATUS_BASE[a.entity]}`, { project: item.project });
   const vocab = vocabulary(a.entity, statuses);
   const hasComment = typeof a.comment === "string" && a.comment.trim() !== "";
@@ -108,8 +110,16 @@ export async function strictTransition(client: TaigaClient, identity: WorkflowId
   if (!from || !to) return rejection({ ...base, code: "WORKFLOW_TRANSITION_REJECTED", message: `status ${!from ? item.status : a.status} is not a status of this project's ${a.entity} workflow` });
   const author = identity.actor.display;
   const role = callerRole(identity, author);
-  const allowed = () => actionsFor(a.entity, role, from, vocab.idByName.keys()).allowed.map((r) => ({ target_status: r.target, artifact: r.artifact, mode: r.mode }));
-  let res = resolveTransition(a.entity, role, from, to);
+  // A project the policy engine manages is decided by its active policy; any other project keeps the legacy rules. If the engine cannot say
+  // which one applies, the answer is a refusal, never the legacy path.
+  let managed: ManagedPolicy | null = null;
+  if (runtime && item.project !== undefined) {
+    try { managed = await runtime.forProject(item.project); } catch (e) {
+      return rejection({ ...base, code: "WORKFLOW_POLICY_UNAVAILABLE", message: `the policy of this project cannot be resolved, so the transition is refused: ${(e as Error).message}` });
+    }
+  }
+  const allowed = () => (managed ? allowedActions(managed.policy, a.entity, role, from, vocab.idByName.keys()) : actionsFor(a.entity, role, from, vocab.idByName.keys())).allowed.map((r) => ({ target_status: r.target, artifact: r.artifact, mode: r.mode }));
+  let res = managed ? evaluate(managed.policy, a.entity, role, from, to) : resolveTransition(a.entity, role, from, to);
   if (res.kind === "denied") return rejection({ ...base, code: "WORKFLOW_TRANSITION_REJECTED", message: res.reason, allowed: allowed() });
   if (res.kind === "legacy") return a.artifact !== undefined ? rejection({ ...base, code: "WORKFLOW_TRANSITION_REJECTED", message: `"${from}" -> "${to}" takes a commented transition, not an \`artifact\``, allowed: allowed() }) : null;
 
@@ -248,6 +258,13 @@ export async function strictTransition(client: TaigaClient, identity: WorkflowId
       }]
     : [];
 
+  // A managed project records every write it is about to make, so a crash between the comment and the status leaves evidence.
+  let journalId: string | undefined;
+  if (managed && runtime) {
+    try { journalId = await runtime.begin(managed, "workflow_transition", `${a.entity}:${a.id}`); } catch (e) {
+      return rejection({ ...ctxBase, code: "WORKFLOW_POLICY_UNAVAILABLE", message: `the mutation journal is not available, so nothing was written: ${(e as Error).message}` });
+    }
+  }
   // The artifact comment and the status write go through the one governed write boundary: fresh read, separate validators, write, verification.
   const out = await mutate(client, {
     read: () => client.get(`/${BASE[a.entity]}/${a.id}`),
@@ -268,6 +285,10 @@ export async function strictTransition(client: TaigaClient, identity: WorkflowId
       return notProjected ? `${notProjected}. The artifact and the status are persisted (comment ${r.persisted.id}); only the Assigned projection is wrong, status stays authoritative.` : null;
     },
   });
+  if (journalId && runtime) {
+    const phase = !out.written ? "failed" : out.integrity ? "applied" : "completed";
+    await runtime.finish(journalId, phase, { revision: managed?.revision, ...(out.written ? { comment_id: out.result.persisted?.id, integrity: out.integrity ?? null } : { problem: out.problem }) }).catch((e: Error) => process.stderr.write(`policy journal: ${journalId} not closed: ${e.message}\n`));
+  }
   if (!out.written) return refusal
     ? rejection({ ...ctxBase, code: "WORKFLOW_START_REFUSED", message: out.problem, violations: [out.problem], blocker: refusal, nextStep: refusal.remediation })
     : rejection({ ...ctxBase, code: "WORKFLOW_PRECONDITION_FAILED", message: out.problem, violations: [out.problem] });
