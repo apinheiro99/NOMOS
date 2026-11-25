@@ -38,3 +38,10 @@ export function allowedActions(policy: Policy, entity: EntityKind, role: ActorRo
 
 // Default deny: a plain write is allowed only to a role the policy lists for that operation. An unauthenticated caller (no role) never is.
 export const permits = (policy: Policy, operation: string, role: ActorRole | null): boolean => role !== null && (policy.operations?.[operation] ?? []).includes(role);
+
+// Who a managed project points at when a card arrives at `to`: the owner of that status, or for a completion the owner of In Progress. Only a Bridge party
+// (GPT, Claude) can be a recipient; an owner that is the PO or nobody means there is no one to notify, never "the other party".
+export function recipientOf(policy: Policy, entity: EntityKind, to: string): "gpt" | "claude" | null {
+  const owner = ownerOf(policy, entity, to === "done" ? "in progress" : to);
+  return owner === "gpt" || owner === "claude" ? owner : null;
+}

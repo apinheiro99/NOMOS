@@ -5,6 +5,688 @@
   "claude",
   "po"
  ],
+ "operations": {
+  "taiga_assignees_backfill": [
+   "gpt",
+   "claude",
+   "po"
+  ],
+  "taiga_continuation_ack": [
+   "gpt",
+   "claude",
+   "po"
+  ],
+  "taiga_epic_custom_attributes_create": [
+   "gpt",
+   "claude",
+   "po"
+  ],
+  "taiga_epic_custom_attributes_delete": [
+   "gpt",
+   "claude",
+   "po"
+  ],
+  "taiga_epic_custom_attributes_update": [
+   "gpt",
+   "claude",
+   "po"
+  ],
+  "taiga_epic_custom_attributes_values_update": [
+   "gpt",
+   "claude",
+   "po"
+  ],
+  "taiga_epics_bulk_create": [
+   "gpt",
+   "claude",
+   "po"
+  ],
+  "taiga_epics_create": [
+   "gpt",
+   "claude",
+   "po"
+  ],
+  "taiga_epics_delete": [
+   "gpt",
+   "claude",
+   "po"
+  ],
+  "taiga_epics_downvote": [
+   "gpt",
+   "claude",
+   "po"
+  ],
+  "taiga_epics_related_userstories_add": [
+   "gpt",
+   "claude",
+   "po"
+  ],
+  "taiga_epics_related_userstories_bulk_create": [
+   "gpt",
+   "claude",
+   "po"
+  ],
+  "taiga_epics_related_userstories_remove": [
+   "gpt",
+   "claude",
+   "po"
+  ],
+  "taiga_epics_related_userstories_update_order": [
+   "gpt",
+   "claude",
+   "po"
+  ],
+  "taiga_epics_unwatch": [
+   "gpt",
+   "claude",
+   "po"
+  ],
+  "taiga_epics_update": [
+   "gpt",
+   "claude",
+   "po"
+  ],
+  "taiga_epics_upvote": [
+   "gpt",
+   "claude",
+   "po"
+  ],
+  "taiga_epics_watch": [
+   "gpt",
+   "claude",
+   "po"
+  ],
+  "taiga_issue_comment_create": [
+   "gpt",
+   "claude",
+   "po"
+  ],
+  "taiga_issue_comment_delete": [
+   "gpt",
+   "claude",
+   "po"
+  ],
+  "taiga_issue_custom_attributes_create": [
+   "gpt",
+   "claude",
+   "po"
+  ],
+  "taiga_issue_custom_attributes_delete": [
+   "gpt",
+   "claude",
+   "po"
+  ],
+  "taiga_issue_custom_attributes_update": [
+   "gpt",
+   "claude",
+   "po"
+  ],
+  "taiga_issue_custom_attributes_values_update": [
+   "gpt",
+   "claude",
+   "po"
+  ],
+  "taiga_issue_move_to_backlog": [
+   "gpt",
+   "claude",
+   "po"
+  ],
+  "taiga_issue_statuses_bulk_update_order": [
+   "gpt",
+   "claude",
+   "po"
+  ],
+  "taiga_issue_statuses_create": [
+   "gpt",
+   "claude",
+   "po"
+  ],
+  "taiga_issue_statuses_delete": [
+   "gpt",
+   "claude",
+   "po"
+  ],
+  "taiga_issue_statuses_update": [
+   "gpt",
+   "claude",
+   "po"
+  ],
+  "taiga_issue_types_bulk_update_order": [
+   "gpt",
+   "claude",
+   "po"
+  ],
+  "taiga_issue_types_create": [
+   "gpt",
+   "claude",
+   "po"
+  ],
+  "taiga_issue_types_delete": [
+   "gpt",
+   "claude",
+   "po"
+  ],
+  "taiga_issue_types_update": [
+   "gpt",
+   "claude",
+   "po"
+  ],
+  "taiga_issues_bulk_create": [
+   "gpt",
+   "claude",
+   "po"
+  ],
+  "taiga_issues_create": [
+   "gpt",
+   "claude",
+   "po"
+  ],
+  "taiga_issues_delete": [
+   "gpt",
+   "claude",
+   "po"
+  ],
+  "taiga_issues_downvote": [
+   "gpt",
+   "claude",
+   "po"
+  ],
+  "taiga_issues_promote_to_userstory": [
+   "gpt",
+   "claude",
+   "po"
+  ],
+  "taiga_issues_unwatch": [
+   "gpt",
+   "claude",
+   "po"
+  ],
+  "taiga_issues_update": [
+   "gpt",
+   "claude",
+   "po"
+  ],
+  "taiga_issues_upvote": [
+   "gpt",
+   "claude",
+   "po"
+  ],
+  "taiga_issues_watch": [
+   "gpt",
+   "claude",
+   "po"
+  ],
+  "taiga_memberships_bulk_create": [
+   "gpt",
+   "claude",
+   "po"
+  ],
+  "taiga_memberships_create": [
+   "gpt",
+   "claude",
+   "po"
+  ],
+  "taiga_memberships_delete": [
+   "gpt",
+   "claude",
+   "po"
+  ],
+  "taiga_memberships_update": [
+   "gpt",
+   "claude",
+   "po"
+  ],
+  "taiga_milestones_create": [
+   "gpt",
+   "claude",
+   "po"
+  ],
+  "taiga_milestones_delete": [
+   "gpt",
+   "claude",
+   "po"
+  ],
+  "taiga_milestones_unwatch": [
+   "gpt",
+   "claude",
+   "po"
+  ],
+  "taiga_milestones_update": [
+   "gpt",
+   "claude",
+   "po"
+  ],
+  "taiga_milestones_watch": [
+   "gpt",
+   "claude",
+   "po"
+  ],
+  "taiga_move": [
+   "gpt",
+   "claude",
+   "po"
+  ],
+  "taiga_points_bulk_update_order": [
+   "gpt",
+   "claude",
+   "po"
+  ],
+  "taiga_points_create": [
+   "gpt",
+   "claude",
+   "po"
+  ],
+  "taiga_points_delete": [
+   "gpt",
+   "claude",
+   "po"
+  ],
+  "taiga_points_update": [
+   "gpt",
+   "claude",
+   "po"
+  ],
+  "taiga_priorities_bulk_update_order": [
+   "gpt",
+   "claude",
+   "po"
+  ],
+  "taiga_priorities_create": [
+   "gpt",
+   "claude",
+   "po"
+  ],
+  "taiga_priorities_delete": [
+   "gpt",
+   "claude",
+   "po"
+  ],
+  "taiga_priorities_update": [
+   "gpt",
+   "claude",
+   "po"
+  ],
+  "taiga_project_apply_profile": [
+   "gpt",
+   "claude",
+   "po"
+  ],
+  "taiga_project_export": [
+   "gpt",
+   "claude",
+   "po"
+  ],
+  "taiga_project_import": [
+   "gpt",
+   "claude",
+   "po"
+  ],
+  "taiga_projects_create": [
+   "gpt",
+   "claude",
+   "po"
+  ],
+  "taiga_projects_create_tag": [
+   "gpt",
+   "claude",
+   "po"
+  ],
+  "taiga_projects_delete": [
+   "gpt",
+   "claude",
+   "po"
+  ],
+  "taiga_projects_delete_tag": [
+   "gpt",
+   "claude",
+   "po"
+  ],
+  "taiga_projects_edit_tag": [
+   "gpt",
+   "claude",
+   "po"
+  ],
+  "taiga_projects_like": [
+   "gpt",
+   "claude",
+   "po"
+  ],
+  "taiga_projects_unlike": [
+   "gpt",
+   "claude",
+   "po"
+  ],
+  "taiga_projects_unwatch": [
+   "gpt",
+   "claude",
+   "po"
+  ],
+  "taiga_projects_update": [
+   "gpt",
+   "claude",
+   "po"
+  ],
+  "taiga_projects_watch": [
+   "gpt",
+   "claude",
+   "po"
+  ],
+  "taiga_roles_create": [
+   "gpt",
+   "claude",
+   "po"
+  ],
+  "taiga_roles_delete": [
+   "gpt",
+   "claude",
+   "po"
+  ],
+  "taiga_roles_update": [
+   "gpt",
+   "claude",
+   "po"
+  ],
+  "taiga_severities_bulk_update_order": [
+   "gpt",
+   "claude",
+   "po"
+  ],
+  "taiga_severities_create": [
+   "gpt",
+   "claude",
+   "po"
+  ],
+  "taiga_severities_delete": [
+   "gpt",
+   "claude",
+   "po"
+  ],
+  "taiga_severities_update": [
+   "gpt",
+   "claude",
+   "po"
+  ],
+  "taiga_task_comment_create": [
+   "gpt",
+   "claude",
+   "po"
+  ],
+  "taiga_task_comment_delete": [
+   "gpt",
+   "claude",
+   "po"
+  ],
+  "taiga_task_custom_attributes_create": [
+   "gpt",
+   "claude",
+   "po"
+  ],
+  "taiga_task_custom_attributes_delete": [
+   "gpt",
+   "claude",
+   "po"
+  ],
+  "taiga_task_custom_attributes_update": [
+   "gpt",
+   "claude",
+   "po"
+  ],
+  "taiga_task_custom_attributes_values_update": [
+   "gpt",
+   "claude",
+   "po"
+  ],
+  "taiga_task_statuses_bulk_update_order": [
+   "gpt",
+   "claude",
+   "po"
+  ],
+  "taiga_task_statuses_create": [
+   "gpt",
+   "claude",
+   "po"
+  ],
+  "taiga_task_statuses_delete": [
+   "gpt",
+   "claude",
+   "po"
+  ],
+  "taiga_task_statuses_update": [
+   "gpt",
+   "claude",
+   "po"
+  ],
+  "taiga_tasks_bulk_create": [
+   "gpt",
+   "claude",
+   "po"
+  ],
+  "taiga_tasks_bulk_update_taskboard_order": [
+   "gpt",
+   "claude",
+   "po"
+  ],
+  "taiga_tasks_create": [
+   "gpt",
+   "claude",
+   "po"
+  ],
+  "taiga_tasks_delete": [
+   "gpt",
+   "claude",
+   "po"
+  ],
+  "taiga_tasks_downvote": [
+   "gpt",
+   "claude",
+   "po"
+  ],
+  "taiga_tasks_unwatch": [
+   "gpt",
+   "claude",
+   "po"
+  ],
+  "taiga_tasks_update": [
+   "gpt",
+   "claude",
+   "po"
+  ],
+  "taiga_tasks_upvote": [
+   "gpt",
+   "claude",
+   "po"
+  ],
+  "taiga_tasks_watch": [
+   "gpt",
+   "claude",
+   "po"
+  ],
+  "taiga_userstories_bulk_create": [
+   "gpt",
+   "claude",
+   "po"
+  ],
+  "taiga_userstories_bulk_update_sprint_order": [
+   "gpt",
+   "claude",
+   "po"
+  ],
+  "taiga_userstories_create": [
+   "gpt",
+   "claude",
+   "po"
+  ],
+  "taiga_userstories_delete": [
+   "gpt",
+   "claude",
+   "po"
+  ],
+  "taiga_userstories_downvote": [
+   "gpt",
+   "claude",
+   "po"
+  ],
+  "taiga_userstories_unwatch": [
+   "gpt",
+   "claude",
+   "po"
+  ],
+  "taiga_userstories_update": [
+   "gpt",
+   "claude",
+   "po"
+  ],
+  "taiga_userstories_upvote": [
+   "gpt",
+   "claude",
+   "po"
+  ],
+  "taiga_userstories_watch": [
+   "gpt",
+   "claude",
+   "po"
+  ],
+  "taiga_userstory_comment_create": [
+   "gpt",
+   "claude",
+   "po"
+  ],
+  "taiga_userstory_comment_delete": [
+   "gpt",
+   "claude",
+   "po"
+  ],
+  "taiga_userstory_custom_attributes_create": [
+   "gpt",
+   "claude",
+   "po"
+  ],
+  "taiga_userstory_custom_attributes_delete": [
+   "gpt",
+   "claude",
+   "po"
+  ],
+  "taiga_userstory_custom_attributes_update": [
+   "gpt",
+   "claude",
+   "po"
+  ],
+  "taiga_userstory_custom_attributes_values_update": [
+   "gpt",
+   "claude",
+   "po"
+  ],
+  "taiga_userstory_move_to_backlog": [
+   "gpt",
+   "claude",
+   "po"
+  ],
+  "taiga_userstory_statuses_bulk_update_order": [
+   "gpt",
+   "claude",
+   "po"
+  ],
+  "taiga_userstory_statuses_create": [
+   "gpt",
+   "claude",
+   "po"
+  ],
+  "taiga_userstory_statuses_delete": [
+   "gpt",
+   "claude",
+   "po"
+  ],
+  "taiga_userstory_statuses_update": [
+   "gpt",
+   "claude",
+   "po"
+  ],
+  "taiga_uuid_backfill": [
+   "gpt",
+   "claude",
+   "po"
+  ],
+  "taiga_uuid_initialize_project": [
+   "gpt",
+   "claude",
+   "po"
+  ],
+  "taiga_webhooklogs_resend": [
+   "gpt",
+   "claude",
+   "po"
+  ],
+  "taiga_webhooks_create": [
+   "gpt",
+   "claude",
+   "po"
+  ],
+  "taiga_webhooks_delete": [
+   "gpt",
+   "claude",
+   "po"
+  ],
+  "taiga_webhooks_test": [
+   "gpt",
+   "claude",
+   "po"
+  ],
+  "taiga_webhooks_update": [
+   "gpt",
+   "claude",
+   "po"
+  ],
+  "taiga_wiki_comment_create": [
+   "gpt",
+   "claude",
+   "po"
+  ],
+  "taiga_wiki_comment_delete": [
+   "gpt",
+   "claude",
+   "po"
+  ],
+  "taiga_wiki_create": [
+   "gpt",
+   "claude",
+   "po"
+  ],
+  "taiga_wiki_delete": [
+   "gpt",
+   "claude",
+   "po"
+  ],
+  "taiga_wiki_links_create": [
+   "gpt",
+   "claude",
+   "po"
+  ],
+  "taiga_wiki_links_delete": [
+   "gpt",
+   "claude",
+   "po"
+  ],
+  "taiga_wiki_links_update": [
+   "gpt",
+   "claude",
+   "po"
+  ],
+  "taiga_wiki_unwatch": [
+   "gpt",
+   "claude",
+   "po"
+  ],
+  "taiga_wiki_update": [
+   "gpt",
+   "claude",
+   "po"
+  ],
+  "taiga_wiki_watch": [
+   "gpt",
+   "claude",
+   "po"
+  ]
+ },
  "entities": {
   "task": {
    "states": {

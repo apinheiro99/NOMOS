@@ -93,7 +93,9 @@ beforeEach(() => {
       if (path === "/history/task/7") return ok(comments);
       if (path === "/tasks/7") return ok({ ...task });
       if (path === "/tasks") return ok([task]);
-      if (path === "/milestones") return ok([]);
+      if (path === "/milestones") return ok(task.milestone ? [{ id: 1 }] : []);
+      if (path === "/userstories") return ok([]);
+      if (path === "/userstory-statuses") return ok(["Ready", "In Progress", "GPT Validation", "Done", "Human Decision", "Cancelled"].map((name, i) => ({ id: i + 1, name })));
       if (path === "/projects") return ok([{ id: 49 }]);
     }
     if (method === "PATCH") {
@@ -150,6 +152,16 @@ test("GPT-only policy: GPT releases, executes and hands off alone; Claude is ref
   const bp = comments.find((c) => c.comment.includes("Implementation Blueprint"))!.id;
   assert.equal(payload(await move("gpt", T.val, handoff(bp))).transitioned, true);
   assert.deepEqual((await journal()).map((j) => `${j.operation}:${j.target_key}:${j.phase}`), ["workflow_transition:task:7:completed", "workflow_transition:task:7:completed"]);
+});
+
+test("GPT-only stays GPT-only through recovery: a lost ledger is rebuilt with GPT as the recipient, never Claude", async () => {
+  assert.equal(payload(await move("gpt", T.prog, blueprint())).transitioned, true);
+  task.milestone = 1 as never;
+  rmSync(process.env.TAIGA_MCP_CONTINUATION_FILE!, { force: true }); // the ledger is lost, as after a failed append
+  const listed = payload(await call("gpt", "taiga_continuations_pending", { project: 49 }));
+  assert.equal(listed.recovery.recovered > 0, true, JSON.stringify(listed));
+  assert.deepEqual([...new Set(listed.continuations.map((c: { to: string }) => c.to))], ["gpt"]);
+  assert.deepEqual(payload(await call("claude", "taiga_continuations_pending", { project: 49 })).continuations, []);
 });
 
 test("the next decision uses the newly approved revision, with no restart", async () => {

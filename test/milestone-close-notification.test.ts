@@ -101,7 +101,7 @@ test("prepare leaves the Sprint OPEN, signs before any terminal write, stores th
   const r = await prepare();
   assert.equal(sprint.closed, false, "no closed=true write"); assert.equal(patched, false);
   assert.equal(r.merge_ready, true); assert.equal(r.closed, false); assert.equal(r.notification, "sent");
-  assert.deepEqual(sent(), ["--type SPRINT_CLOSED --sprint 179 --project 48 --from gpt --status Merge ready; Sprint still open"]);
+  assert.deepEqual(sent(), ["--type SPRINT_CLOSED --sprint 179 --project 48 --from gpt --to claude --status Merge ready; Sprint still open"]);
   const c = r.merge_authorization.claims;
   assert.deepEqual([c.action, c.work_item, c.target_work_item, c.project, c.source_branch, c.target_branch], ["sprint-done", "Sprint #179", "Project #48", 48, "feature/sprint-179-x", "main"]);
   assert.equal(verifyMergeAuthorization(r.merge_authorization, pub), true);
