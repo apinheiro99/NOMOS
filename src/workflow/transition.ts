@@ -1,6 +1,7 @@
 import type { TaigaClient } from "../client.js";
 import { callerRole, type WorkflowIdentity } from "./actor.js";
 import { validateArtifact } from "./artifacts.js";
+import { uuidv7 } from "../identity.js";
 import { loadSigner, mergeContextProblems, signMergeAuthorization, type MergeContext, type Signer, type WorkItemIdentity } from "./merge-auth.js";
 import { projectResolver, renderGovernedArtifact } from "./refs.js";
 import { analyse, orderedComments, UnsupportedArtifactError, type HistoryItem } from "./state.js";
@@ -273,6 +274,18 @@ export async function strictTransition(client: TaigaClient, identity: WorkflowId
       return rejection({ ...ctxBase, code: "WORKFLOW_POLICY_UNAVAILABLE", message: `the mutation journal is not available, so nothing was written: ${(e as Error).message}` });
     }
   }
+  // The authorization owed by this Done is stored BEFORE the write, so a crash afterwards can still issue it (once, from the stored context).
+  const owed = managed && runtime && merge?.identity && merge.target && item.project !== undefined && (a.entity === "task" || a.entity === "userstory")
+    ? { managed, runtime, entity: a.entity, project: item.project, workItem: merge.identity, target: merge.target, authorizationId: uuidv7() } : undefined;
+  const authorizationId = owed?.authorizationId;
+  if (owed) {
+    try {
+      await owed.runtime.openMergeObligation(owed.managed, { authorizationId: owed.authorizationId, entity: owed.entity, taigaId: a.id, doneStatus: a.status, taigaProject: owed.project, context: a.mergeContext as MergeContext, workItem: owed.workItem, targetWorkItem: owed.target });
+    } catch (e) {
+      if (journalId && runtime) await runtime.finish(journalId, "failed", { problem: "merge obligation not stored" }).catch(() => undefined);
+      return rejection({ ...ctxBase, code: "WORKFLOW_POLICY_UNAVAILABLE", message: `the merge obligation could not be stored, so nothing was written: ${(e as Error).message}` });
+    }
+  }
   // The artifact comment and the status write go through the one governed write boundary: fresh read, separate validators, write, verification.
   const out = await mutate(client, {
     read: () => client.get(`/${BASE[a.entity]}/${a.id}`),
@@ -297,6 +310,7 @@ export async function strictTransition(client: TaigaClient, identity: WorkflowId
     const phase = !out.written ? "failed" : out.integrity ? "applied" : "completed";
     await runtime.finish(journalId, phase, { revision: managed?.revision, ...(out.written ? { comment_id: out.result.persisted?.id, integrity: out.integrity ?? null } : { problem: out.problem }) }).catch((e: Error) => process.stderr.write(`policy journal: ${journalId} not closed: ${e.message}\n`));
   }
+  if (!out.written && authorizationId && runtime) await runtime.settleMergeObligation(authorizationId, { abandoned: true }).catch(() => undefined);
   if (!out.written) return refusal
     ? rejection({ ...ctxBase, code: "WORKFLOW_START_REFUSED", message: out.problem, violations: [out.problem], blocker: refusal, nextStep: refusal.remediation })
     : rejection({ ...ctxBase, code: "WORKFLOW_PRECONDITION_FAILED", message: out.problem, violations: [out.problem] });
@@ -308,7 +322,9 @@ export async function strictTransition(client: TaigaClient, identity: WorkflowId
   let mergeAuth: Record<string, unknown> | undefined;
   if (signer && merge?.identity && merge.target && item.project !== undefined) {
     try {
-      mergeAuth = { merge_authorization: sign(signer, a.mergeContext as MergeContext, item.project, merge.identity, merge.target) };
+      const envelope = sign(signer, a.mergeContext as MergeContext, item.project, merge.identity, merge.target, authorizationId);
+      if (authorizationId && runtime) await runtime.settleMergeObligation(authorizationId, { signed: envelope });
+      mergeAuth = { merge_authorization: envelope };
     } catch (e) {
       mergeAuth = { merge_authorization_error: { message: (e as Error).message, note: "The Done transition IS persisted and authoritative; do not retry it. Only the authorization was not issued." } };
     }

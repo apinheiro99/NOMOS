@@ -1,14 +1,23 @@
 import type pg from "pg";
 import { uuidv7 } from "../identity.js";
 import type { Policy } from "./types.js";
+import type { MergeContext, MergeEnvelope, WorkItemIdentity } from "../workflow/merge-auth.js";
 
 // What the MCP asks the policy engine at decision time. `null` means "this project is not managed: the legacy rules apply".
 export interface ManagedPolicy { projectId: string; activationId: string; revision: number; policy: Policy }
+
+export interface MergeObligation {
+  authorizationId: string; entity: "task" | "userstory"; taigaId: number; doneStatus: number; taigaProject: number;
+  context: MergeContext; workItem: WorkItemIdentity; targetWorkItem: string;
+}
 
 export interface PolicyRuntime {
   forProject(taigaProjectId: number): Promise<ManagedPolicy | null>;
   begin(m: ManagedPolicy, operation: string, target: string): Promise<string>;
   finish(journalId: string, phase: "applied" | "completed" | "failed", result: object): Promise<void>;
+  openMergeObligation(m: ManagedPolicy, o: MergeObligation): Promise<void>;
+  settleMergeObligation(authorizationId: string, outcome: { signed: MergeEnvelope } | { abandoned: true }): Promise<void>;
+  pendingMergeObligations(): Promise<MergeObligation[]>;
 }
 
 // Only a project registered as `legacy` (or not registered at all) keeps the old rules. A project that is pending, drifting or inaccessible,
@@ -47,6 +56,21 @@ export function createPolicyRuntime(pool: pg.Pool, baseUrl: string): PolicyRunti
     },
     async finish(journalId, phase, result) {
       await pool.query("UPDATE mutation_journal SET phase = $2, result = $3, updated_at = now() WHERE id = $1", [journalId, phase, JSON.stringify(result)]);
+    },
+    async openMergeObligation(m, o) {
+      await pool.query(
+        `INSERT INTO merge_obligation (authorization_id, project_id, entity, taiga_id, done_status, taiga_project, context, work_item, target_work_item, state)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'pending')`,
+        [o.authorizationId, m.projectId, o.entity, o.taigaId, o.doneStatus, o.taigaProject, JSON.stringify(o.context), JSON.stringify(o.workItem), o.targetWorkItem],
+      );
+    },
+    async settleMergeObligation(authorizationId, outcome) {
+      const signed = "signed" in outcome;
+      await pool.query("UPDATE merge_obligation SET state = $2, envelope = $3, updated_at = now() WHERE authorization_id = $1 AND state = 'pending'", [authorizationId, signed ? "signed" : "abandoned", signed ? JSON.stringify(outcome.signed) : null]);
+    },
+    async pendingMergeObligations() {
+      const { rows } = await pool.query("SELECT authorization_id, entity, taiga_id, done_status, taiga_project, context, work_item, target_work_item FROM merge_obligation WHERE state = 'pending' ORDER BY created_at");
+      return rows.map((r) => ({ authorizationId: r.authorization_id, entity: r.entity, taigaId: Number(r.taiga_id), doneStatus: Number(r.done_status), taigaProject: Number(r.taiga_project), context: r.context, workItem: r.work_item, targetWorkItem: r.target_work_item }));
     },
   };
 }
