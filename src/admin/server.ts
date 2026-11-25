@@ -1,7 +1,7 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import type pg from "pg";
 import { ZodError } from "zod";
-import { isHostAllowed, isLoopback, isOriginAllowed, type AdminConfig } from "../config.js";
+import { isAdminHostAllowed, isOriginAllowed, type AdminConfig } from "../config.js";
 import { ProjectLockBusyError } from "../policy/repository.js";
 import { PolicyError } from "../policy/service.js";
 import { uuidv7 } from "../identity.js";
@@ -61,7 +61,7 @@ export function startAdminServer(config: AdminConfig, pool: pg.Pool, actors: Act
       if (devReload && req.method === "GET" && url.pathname === DEV_RELOAD_PATH) return devReload(res);
       if (!url.pathname.startsWith(`${PREFIX}/`)) return send(res, 404, { code: "not_found", message: "route does not exist", problems: [], correlation_id: correlation }, correlation);
       const origin = req.headers.origin;
-      if ((origin !== undefined && !isOriginAllowed(origin, config.allowedOrigins)) || (isLoopback(config.host) && !isHostAllowed(req.headers.host))) {
+      if ((origin !== undefined && !isOriginAllowed(origin, config.allowedOrigins)) || !isAdminHostAllowed(req.headers.host, config.host, config.allowedHosts)) {
         return send(res, 403, { code: "forbidden", message: "origin or host not allowed", problems: [], correlation_id: correlation }, correlation);
       }
       // Authentication comes first and covers every method: no token, no answer, not even for GET.

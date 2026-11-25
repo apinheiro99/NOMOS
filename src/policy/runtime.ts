@@ -1,5 +1,6 @@
 import type pg from "pg";
 import { uuidv7 } from "../identity.js";
+import { withProjectLock } from "./repository.js";
 import type { Policy } from "./types.js";
 import type { MergeContext, MergeEnvelope, WorkItemIdentity } from "../workflow/merge-auth.js";
 
@@ -13,6 +14,8 @@ export interface MergeObligation {
 
 export interface PolicyRuntime {
   forProject(taigaProjectId: number): Promise<ManagedPolicy | null>;
+  /** Holds the project's shared lock for a governed mutation. Resolves to the release function, or null for a legacy project. Throws when the project is not safe or a policy change is running. */
+  hold(taigaProjectId: number): Promise<(() => Promise<void>) | null>;
   begin(m: ManagedPolicy, operation: string, target: string): Promise<string>;
   finish(journalId: string, phase: "applied" | "completed" | "failed", result: object): Promise<void>;
   openMergeObligation(m: ManagedPolicy, o: MergeObligation): Promise<void>;
@@ -20,8 +23,8 @@ export interface PolicyRuntime {
   pendingMergeObligations(): Promise<MergeObligation[]>;
 }
 
-// Only a project registered as `legacy` (or not registered at all) keeps the old rules. A project that is pending, drifting or inaccessible,
-// or managed without an active policy, is refused: a database or binding problem must never turn into the permissive path.
+// Only a project explicitly registered as `legacy` keeps the old rules. A project with no binding (not mirrored yet, or the wrong instance), pending,
+// drifting or inaccessible, or managed without an active policy, is refused: a database or binding problem must never turn into the permissive path.
 const LEGACY = new Set(["legacy", "archived"]);
 
 // The Taiga instance is identified by its base URL (without a trailing slash), exactly as stored in taiga_instance.base_url.
@@ -43,11 +46,25 @@ export function createPolicyRuntime(pool: pg.Pool, baseUrl: string): PolicyRunti
         [baseUrl, taigaProjectId],
       );
       const row = rows[0];
-      if (!row || LEGACY.has(row.lifecycle)) return null;
+      if (!row) throw new Error(`project ${taigaProjectId} has no binding in this instance: run the mirror before governed writes`);
+      if (LEGACY.has(row.lifecycle)) return null;
       // Drift, pending and inaccessible projects are blocked even when they still hold a policy: the mirror says Taiga no longer matches it.
       if (row.lifecycle !== "managed") throw new Error(`project ${taigaProjectId} is ${row.lifecycle}: governed writes are blocked until the mirror reconciles it`);
       if (!row.activation_id || !row.payload) throw new Error(`project ${taigaProjectId} is managed but has no active policy`);
       return { projectId: row.project_id, activationId: row.activation_id, revision: Number(row.revision), policy: row.payload };
+    },
+    async hold(taigaProjectId) {
+      const managed = await this.forProject(taigaProjectId);
+      if (!managed) return null;
+      // withProjectLock wraps a callback, so the callback parks on `gate` until the caller releases.
+      let release!: () => void;
+      const gate = new Promise<void>((resolve) => { release = resolve; });
+      let acquired!: () => void;
+      let failed!: (e: unknown) => void;
+      const ready = new Promise<void>((resolve, reject) => { acquired = resolve; failed = reject; });
+      const done = withProjectLock(pool, managed.projectId, async () => { acquired(); await gate; }, true).catch(failed);
+      await ready;
+      return async () => { release(); await done; };
     },
     async begin(m, operation, target) {
       const id = uuidv7();

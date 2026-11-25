@@ -98,7 +98,19 @@ function recipientFrom(policy: Policy, entity: EntityKind, to: string): Party | 
 
 // Strict profile transition: actor/state matrix + typed artifact. Returns null when the generic (legacy) path applies.
 // Every rejection happens before any Taiga mutation; the artifact is posted first, proven in history, then the status moves.
+// A managed project's transition runs under the project's shared lock, from the decision to the last write: a policy change (which takes the same lock
+// exclusively) can never land between the two, and a refusal to hold it is a refusal to write.
 export async function strictTransition(client: TaigaClient, identity: WorkflowIdentity, a: TransitionArgs, item: Item, sign: typeof signMergeAuthorization = signMergeAuthorization, runtime?: PolicyRuntime): Promise<ToolResult | null> {
+  let release: (() => Promise<void>) | null = null;
+  if (runtime && item.project !== undefined) {
+    try { release = await runtime.hold(item.project); } catch (e) {
+      return rejection({ code: "WORKFLOW_POLICY_UNAVAILABLE", message: `the policy of this project cannot be held for this transition, so it is refused: ${(e as Error).message}` });
+    }
+  }
+  try { return await decideAndWrite(client, identity, a, item, sign, runtime); } finally { await release?.(); }
+}
+
+async function decideAndWrite(client: TaigaClient, identity: WorkflowIdentity, a: TransitionArgs, item: Item, sign: typeof signMergeAuthorization, runtime?: PolicyRuntime): Promise<ToolResult | null> {
   const statuses = item.project === undefined ? undefined : await client.get(`/${STATUS_BASE[a.entity]}`, { project: item.project });
   const vocab = vocabulary(a.entity, statuses);
   const hasComment = typeof a.comment === "string" && a.comment.trim() !== "";
