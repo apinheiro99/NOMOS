@@ -6,7 +6,7 @@ import { projectResolver, renderGovernedArtifact } from "./refs.js";
 import { analyse, orderedComments, UnsupportedArtifactError, type HistoryItem } from "./state.js";
 import { latest, loadTemplates, nameFor, TemplateError } from "./templates.js";
 import { actionsFor, closureFor, integrityMessage, norm, resolveTransition, vocabulary, type EntityKind } from "./policy.js";
-import { allowedActions, evaluate } from "../policy/evaluator.js";
+import { allowedActions, evaluate, ownerOf } from "../policy/evaluator.js";
 import type { ManagedPolicy, PolicyRuntime } from "../policy/runtime.js";
 import { rejection } from "./reject.js";
 import { bindingRejection } from "./account-binding.js";
@@ -15,7 +15,8 @@ import { mutate } from "./mutation.js";
 import { storyHasChildTask } from "./validators.js";
 import { refusalMessage, storyStartRefusal, taskStartRefusal, type Refusal } from "./start-rules.js";
 import { BASE, STATUS_BASE, text, violation, type ToolResult } from "./result.js";
-import { authorizationTravels, noticeForTransition } from "./notify.js";
+import { authorizationTravels, noticeForTransition, type Party } from "./notify.js";
+import type { Policy } from "../policy/types.js";
 import { announce } from "./continuation.js";
 import { moveClosedStoryToTail } from "./story-order.js";
 import { childTaskStates, promoteStoryWhenChildrenTerminal } from "./story-readiness.js";
@@ -85,6 +86,13 @@ async function mergeIdentity(client: TaigaClient, kind: "task" | "userstory", it
     if (!ctx.target_branch.startsWith(`feature/sprint-${sprint.id}-`)) return { problems: [`merge_context.target_branch must start with feature/sprint-${sprint.id}- (the Story's own Sprint)`] };
     return { problems: [], identity, target: `Sprint #${sprint.id}` };
   } catch (e) { return { problems: [(e as Error).message] }; }
+}
+
+// A managed project names its recipient from the policy: whoever owns the target status, or, for a completion, whoever owned In Progress.
+// An owner that is not a Bridge party (the PO, nobody) leaves the legacy rule (the other party) in place.
+function recipientFrom(policy: Policy, entity: EntityKind, to: string): Party | undefined {
+  const owner = ownerOf(policy, entity, to === "done" ? "in progress" : to);
+  return owner === "gpt" || owner === "claude" ? owner : undefined;
 }
 
 // Strict profile transition: actor/state matrix + typed artifact. Returns null when the generic (legacy) path applies.
@@ -320,7 +328,7 @@ export async function strictTransition(client: TaigaClient, identity: WorkflowId
   }
   // Last step, after the status change is proven: a pointer for the other agent. A failure here never undoes the transition.
   // A signed authorization also rides on the completion notice (stdin, opt-in); the same envelope is always in the result for recovery.
-  const notice = a.entity === "task" || a.entity === "userstory" ? noticeForTransition(role, from, to, item.ref, vocab.displayById.get(a.status) ?? to, requestId, a.entity, item.project) : null;
+  const notice = a.entity === "task" || a.entity === "userstory" ? noticeForTransition(role, from, to, item.ref, vocab.displayById.get(a.status) ?? to, requestId, a.entity, item.project, managed ? recipientFrom(managed.policy, a.entity, to) : undefined) : null;
   const authorization = mergeAuth?.merge_authorization;
   const { notification, continuation } = await announce(notice, persisted.id, process.env, authorization);
   // Exit code 0 proves only that the pointer command ran: the notifier may never have read stdin, so a signed authorization is never reported

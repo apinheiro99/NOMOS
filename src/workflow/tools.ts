@@ -166,7 +166,7 @@ export function registerWorkflowTools(server: McpServer, client: TaigaClient, id
       const rec = await persist(client, args.task_id, rendered);
       if ("error" in rec) return rec.error;
       const { notification, continuation } = await announce((role === "gpt" || role === "claude") && (args.to_actor === "gpt" || args.to_actor === "claude")
-        ? { type: "WORKFLOW_REQUEST_OPENED", taskRef: ref, projectId: task.project, from: role, requestId } : null, rec.id);
+        ? { type: "WORKFLOW_REQUEST_OPENED", to: args.to_actor, taskRef: ref, projectId: task.project, from: role, requestId } : null, rec.id);
       return text({
         notification, ...(continuation ? { continuation } : {}), persisted: true, request_id: requestId, task_id: task.id, task_ref: ref, from_actor: role, to_actor: args.to_actor,
         request_type: args.request_type, question: args.question, context_evidence: args.context_evidence, blocking: args.blocking,
@@ -217,7 +217,7 @@ export function registerWorkflowTools(server: McpServer, client: TaigaClient, id
       if ("error" in rec) return rec.error;
       const asker = req!.from;
       const { notification, continuation } = await announce((role === "gpt" || role === "claude") && (asker === "gpt" || asker === "claude")
-        ? { type: args.resolved ? "WORKFLOW_REQUEST_RESOLVED" : "WORKFLOW_REQUEST_ANSWERED", taskRef: req!.taskRef ?? task.ref ?? task.id, projectId: task.project, from: role, requestId: args.request_id } : null, rec.id);
+        ? { type: args.resolved ? "WORKFLOW_REQUEST_RESOLVED" : "WORKFLOW_REQUEST_ANSWERED", to: asker, taskRef: req!.taskRef ?? task.ref ?? task.id, projectId: task.project, from: role, requestId: args.request_id } : null, rec.id);
       return text({ notification, ...(continuation ? { continuation } : {}), persisted: true, request_id: args.request_id, answered_by: role, resolved: args.resolved, status: args.resolved ? "resolved" : "open", created_at: rec.created_at ?? null, comment_id: rec.id, schema: `${tpl.name}/${tpl.version}`, identity: identity.mode });
     }),
   );
