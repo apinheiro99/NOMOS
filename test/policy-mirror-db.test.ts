@@ -140,23 +140,40 @@ test("provisioning: intent -> created -> bound, a retry with the same key answer
   const runtime = createPolicyRuntime(pool, BASE);
   const seen = { id: 9, slug: "n", name: "N", eligible: true, fingerprint: "f", uuidReady: true };
   let created = 0;
-  const create = async () => { created += 1; return { id: 9, slug: "n", name: "N", seen }; };
+  const create = async () => { created += 1; return { id: 9 }; };
+  const prepare = async () => ({ slug: "n", name: "N", seen });
   const a = { principal: "po", requestKey: "key-aaaaaaaa", requestHash: "h1" };
-  assert.deepEqual(await runtime.provision(a, create), { id: 9, replay: false });
+  assert.deepEqual(await runtime.provision(a, create, prepare), { id: 9, replay: false });
   assert.deepEqual((await runtime.forProject(9))?.revision, 1, "bound and managed with its first policy");
-  assert.deepEqual(await runtime.provision(a, create), { id: 9, replay: true });
+  assert.deepEqual(await runtime.provision(a, create, prepare), { id: 9, replay: true });
   assert.equal(created, 1);
-  await assert.rejects(runtime.provision({ ...a, requestHash: "h2" }, create), /request_key_reused|different project request/);
+  await assert.rejects(runtime.provision({ ...a, requestHash: "h2" }, create, prepare), /request_key_reused|different project request/);
   const boom = { principal: "po", requestKey: "key-bbbbbbbb", requestHash: "h3" };
   // Taiga rejected it (4xx): nothing was created, the failure is confirmed.
-  await assert.rejects(runtime.provision(boom, async () => { throw Object.assign(new Error("rejected"), { status: 400 }); }), /rejected/);
-  await assert.rejects(runtime.provision(boom, create), /Taiga rejected it/);
+  await assert.rejects(runtime.provision(boom, async () => { throw Object.assign(new Error("rejected"), { status: 400 }); }, prepare), /rejected/);
+  await assert.rejects(runtime.provision(boom, create, prepare), /Taiga rejected it/);
   // A timeout or a 5xx may hide a created project: the outcome is unknown and the key is never re-run.
   const lost = { principal: "po", requestKey: "key-cccccccc", requestHash: "h4" };
-  await assert.rejects(runtime.provision(lost, async () => { throw new Error("fetch failed"); }), /fetch failed/);
-  await assert.rejects(runtime.provision(lost, create), /outcome is unknown/);
+  await assert.rejects(runtime.provision(lost, async () => { throw new Error("fetch failed"); }, prepare), /fetch failed/);
+  await assert.rejects(runtime.provision(lost, create, prepare), /outcome is unknown/);
   assert.equal(created, 1, "neither request was run again");
   assert.deepEqual((await pool.query("SELECT request_key, phase FROM provisioning_intent ORDER BY request_key")).rows, [{ request_key: "key-aaaaaaaa", phase: "bound" }, { request_key: "key-bbbbbbbb", phase: "failed" }, { request_key: "key-cccccccc", phase: "intent" }]);
+});
+
+test("provisioning: a POST that succeeded keeps its id when the inspection fails, the same key resumes that project without a second POST, and the principal and the request must match", async () => {
+  const runtime = createPolicyRuntime(pool, BASE);
+  const seen = { id: 31, slug: "q", name: "Q", eligible: true, fingerprint: "f", uuidReady: true };
+  let posts = 0;
+  const create = async () => { posts += 1; return { id: 31 }; };
+  const a = { principal: "po", requestKey: "key-dddddddd", requestHash: "h5" };
+  await assert.rejects(runtime.provision(a, create, async () => { throw new Error("inspection down"); }), /inspection down/);
+  const row = (await pool.query("SELECT phase, external_project_id FROM provisioning_intent WHERE request_key = 'key-dddddddd'")).rows[0];
+  assert.deepEqual([row.phase, row.external_project_id], ["failed", "31"], "the id is registered right after the confirmed POST");
+  await assert.rejects(runtime.provision({ ...a, principal: "gpt" }, create, async () => ({ slug: "q", name: "Q", seen })), /another principal/);
+  assert.deepEqual(await runtime.provision(a, create, async () => ({ slug: "q", name: "Q", seen })), { id: 31, replay: true });
+  assert.equal(posts, 1, "the project was created once");
+  assert.equal((await runtime.forProject(31))?.revision, 1, "and it is now bound and managed");
+  assert.deepEqual(await runtime.provision(a, create, async () => { throw new Error("not needed"); }), { id: 31, replay: true });
 });
 
 test("a managed project that was inaccessible comes back only to the fingerprint it was bound to; roles and UUID definitions are part of it", async () => {
