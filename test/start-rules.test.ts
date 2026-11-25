@@ -7,7 +7,7 @@ const S = { ready: 10, prog: 11, val: 12, done: 13, human: 14, canc: 15 };
 const T = { todo: 1, prog: 2, val: 3, human: 4, done: 5, canc: 6, req: 7 };
 const STORY_ST = [[S.ready, "Ready"], [S.prog, "In Progress"], [S.val, "GPT Validation"], [S.done, "Done"], [S.human, "Human Decision"], [S.canc, "Cancelled"]].map(([id, name]) => ({ id, name }));
 const TASK_ST = [[T.todo, "To Do"], [T.prog, "In Progress"], [T.val, "GPT Validation"], [T.human, "Human Decision"], [T.done, "Done"], [T.canc, "Cancelled"], [T.req, "Request"]].map(([id, name]) => ({ id, name }));
-type Row = Record<string, any>;
+type Row = Record<string, unknown>;
 // A fake Taiga that reads `world` on every call, so a test can change the board between two decisions.
 const taiga = (world: { stories: Row[]; tasks: Row[] }) => ({
   get: async (path: string) => {

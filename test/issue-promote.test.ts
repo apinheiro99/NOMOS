@@ -39,6 +39,7 @@ test("#22: promote posts to the verified endpoint and returns the generated Stor
   assert.deepEqual(gets, [["/userstories/by_ref", { ref: 55, project: 48 }]]);
   const out = JSON.parse(res.content[0].text);
   assert.equal(out.identity, "complete"); assert.match(out.uuid, /^[0-9a-f-]{36}$/);
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars -- rest-omit
   const { uuid, identity, ...rest } = out;
   assert.deepEqual(rest, story);
 });

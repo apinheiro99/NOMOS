@@ -41,7 +41,7 @@ function checkField(f: Field, v: unknown, sink: Sink): void {
     case "questions": {
       if (!Array.isArray(v)) { problems.push(`${where} must be an array (empty when nothing is open)`); break; }
       v.forEach((q, i) => {
-        const ok = q && typeof q === "object" && isText((q as any).question) && (q as any).classification === "implementation_local";
+        const ok = q && typeof q === "object" && isText((q as { question?: unknown }).question) && (q as { classification?: unknown }).classification === "implementation_local";
         if (!ok) problems.push(`${where}[${i}] is not allowed: an executable Blueprint carries no open question unless it is {question, classification: "implementation_local"}; GPT must resolve architectural questions before release`);
       });
       break;
@@ -66,7 +66,7 @@ export function validateArtifact({ template, entity, artifact: a, actorIsPo }: V
   for (const f of fields) checkField(f, a[f.key], sink);
   if (isBlueprint) {
     if (typeof a.problem_model === "string" && UNRESOLVED.test(a.problem_model)) problems.push("problem_model must state the established problem; an unresolved root cause means the Task is not ready for execution", "problem_model");
-    if (Array.isArray(a.findings)) (a.findings as any[]).forEach((f, i) => { if (typeof f?.root_cause === "string" && UNRESOLVED.test(f.root_cause)) problems.push(`findings[${i}].root_cause must be established by GPT, not delegated`, "findings"); });
+    if (Array.isArray(a.findings)) (a.findings as { root_cause?: unknown }[]).forEach((f, i) => { if (typeof f?.root_cause === "string" && UNRESOLVED.test(f.root_cause)) problems.push(`findings[${i}].root_cause must be established by GPT, not delegated`, "findings"); });
   }
   if (template.type === "human_decision_request") {
     if (a.blocked === true && !isText(a.blocked_note)) { sink.messages.push("blocked_note is required when blocked=true"); sink.missing.push("blocked_note"); }

@@ -71,6 +71,7 @@ beforeEach(() => {
       if (srow) { Object.assign(srow, { sprint_order: body.sprint_order, version: srow.version + 1 }); return ok({ ...srow }); }
       if (world.failUnblock && body?.is_blocked === false) return new Response("boom", { status: 500 });
       if (body?.comment !== undefined && !world.dropComments) world[k].comments.push({ id: world.uuidIds ? `${(0x393c47f0 + ++n).toString(16)}-dd90-11f1-84e4-cacb139fa1ca` : `c${++n}`, comment: body.comment, created_at: new Date(1760000000000 + n * 1000).toISOString() });
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars -- rest-omit
       const { comment, version, ...rest } = body;
       if (world.dropAssignee && k === "userstory") delete rest.assigned_to;
       if (world.dropClosed) delete rest.is_closed;
@@ -360,6 +361,7 @@ test("a free-form 'Validation — APPROVED' comment in history never satisfies t
 });
 
 test("blueprint shape: missing section, unknown field, architectural open question, unresolved root cause, wrong version/mode", async () => {
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars -- rest-omit
   const { objective, ...noObjective } = blueprint();
   reject(await tr("gpt", T.prog, noObjective), "missing objective", /objective is required/);
   reject(await tr("gpt", T.prog, blueprint({ surprise: 1 })), "unknown field", /surprise/);
@@ -1239,6 +1241,7 @@ test("guided rejection: missing artifact, wrong type, wrong version, missing and
   guided(await tr("claude", T.val, undefined), { code: "WORKFLOW_ARTIFACT_MISSING", actor: "claude", current_status: "In Progress", attempted_action: "GPT Validation", required_artifact: "execution_handoff", required_version: "1.0.0", template_path: "workflow/templates/execution-handoff-v1.0.0.md" });
   guided(await tr("claude", T.val, { ...hand, type: "validation_approval" }), { code: "WORKFLOW_ARTIFACT_INVALID", invalid_fields: /type/ });
   guided(await tr("claude", T.val, { ...hand, version: "0.9.0" }), { code: "WORKFLOW_ARTIFACT_INVALID", invalid_fields: /version/, required_version: "1.0.0" });
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars -- rest-omit
   const { typecheck, branch, ...partial } = hand;
   const p = guided(await tr("claude", T.val, partial), { code: "WORKFLOW_ARTIFACT_INVALID", missing_fields: ["branch", "typecheck"] });
   assert.match(p.next_step, /taiga_workflow_template.*execution-handoff/);
@@ -1419,7 +1422,7 @@ test("headers: the transition on line 1 is the REAL movement in Taiga, not a fix
 
 // ============================ presentation = template label ======================
 import { renderArtifact } from "../dist/workflow/render.js";
-import { parseArtifact, analyse } from "../dist/workflow/state.js";
+import { parseArtifact } from "../dist/workflow/state.js";
 import { plainLabel } from "../dist/workflow/templates.js";
 
 // edit ONLY the label of one field of one template inside a throwaway copy of the templates directory
@@ -1586,7 +1589,7 @@ test("request_type is validated at runtime against the latest template: editing 
 });
 
 test("HISTORICAL-CONTRACT-1.0.0: a request created under 1.0.0 is interpreted with the 1.0.0 contract after 1.0.1 exists, never silently re-read with the latest", async () => {
-  const created = okr(await rq("gpt", { request_type: "analysis" }));
+  okr(await rq("gpt", { request_type: "analysis" }));
   const comment = world.task.comments.find((c) => /Schema: Workflow Request 1\.0\.0/.test(c.comment));
   assert.ok(comment, "the stored artifact declares Schema 1.0.0");
   const tdir = mkdtempSync(join(tmpdir(), "tpl-"));

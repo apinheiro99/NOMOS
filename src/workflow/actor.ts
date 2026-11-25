@@ -30,7 +30,7 @@ export const EFFORTS = ["Low", "Medium", "High"] as const;
 export function normalizeModel(raw: unknown): string {
   if (typeof raw !== "string") return UNKNOWN;
   const m = raw.normalize("NFC").trim();
-  return /^[\p{L}\p{N} ._:+()\/-]{1,60}$/u.test(m) && m.toLowerCase() !== "unknown" ? m : UNKNOWN;
+  return /^[\p{L}\p{N} ._:+()/-]{1,60}$/u.test(m) && m.toLowerCase() !== "unknown" ? m : UNKNOWN;
 }
 export function normalizeEffort(raw: unknown): string {
   if (typeof raw !== "string") return UNKNOWN;

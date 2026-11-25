@@ -9,4 +9,4 @@ knowledge-base/
 continuations.jsonl
 ci-summary/
 /release/
-.pnpm-store/
+.npm/

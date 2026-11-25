@@ -56,7 +56,7 @@ test("it never uses the 405 bulk endpoints", async () => {
 });
 
 function listWith(rels) {
-  globalThis.fetch = async (url, init = {}) => {
+  globalThis.fetch = async (url) => {
     if (String(url).endsWith("/auth")) return new Response(JSON.stringify({ auth_token: "t", refresh: "r" }), { status: 200 });
     return new Response(JSON.stringify(rels), { status: 200 });
   };

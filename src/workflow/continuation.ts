@@ -27,6 +27,7 @@ function lines(file: string): Line[] {
 export function foldContinuations(file = continuationFile()): Map<string, FoldedContinuation> {
   const out = new Map<string, FoldedContinuation>();
   for (const l of lines(file)) {
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars -- rest-omit: drop op from the folded record
     if (l.op === "emit") { if (!out.has(l.id)) { const { op: _op, ...c } = l; out.set(l.id, { ...c, state: "pending" }); } continue; }
     const c = out.get(l.id);
     if (!c) continue;

@@ -63,13 +63,13 @@ Policies govern operations performed **through Taiga MCP**; they do not intercep
 
 ## Quick start
 
-Requirements: Node.js 24+, [pnpm](https://pnpm.io), a Taiga instance and a Taiga account per actor.
+Requirements: Node.js 24+, a Taiga instance and a Taiga account per actor.
 
 ```bash
 git clone <this-repository-url> taiga-mcp
 cd taiga-mcp
-pnpm install --frozen-lockfile
-pnpm run build
+npm ci
+npm run build
 cp .env.example .env      # fill in your own values; never commit .env
 ```
 
@@ -97,7 +97,7 @@ Register it in an MCP client (stdio), one server entry per actor:
 If you are an AI agent asked to install this project, follow exactly:
 
 1. `git clone <this-repository-url> taiga-mcp && cd taiga-mcp`
-2. `pnpm install --frozen-lockfile && pnpm run build`
+2. `npm ci && npm run build`
 3. Copy `.env.example` to `.env`. Ask the human for `TAIGA_URL` and the account credentials; never invent them and never print them back.
 4. Run `node dist/index.js` once; it must wait on stdin without errors. Stop it.
 5. Add the MCP entry shown above to the client configuration, with an absolute path and the correct `TAIGA_MCP_ACTOR`.
@@ -118,8 +118,8 @@ Real configuration, credentials and deployment seeds live in a **separate privat
 ## Development
 
 ```bash
-pnpm run dev     # run from source
-pnpm run build   # compile to dist/
+npm run dev     # run from source
+npm run build   # compile to dist/
 ```
 
 CI runs on every push. Before anything is published, a public-surface check rejects private keys, tokens, `.env` files and internal addresses.

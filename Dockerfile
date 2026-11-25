@@ -1,25 +1,21 @@
-FROM node:20-alpine AS builder
-
-RUN corepack enable && corepack prepare pnpm@latest --activate
+FROM node:24-alpine AS builder
 
 WORKDIR /app
 
-COPY package.json pnpm-lock.yaml ./
-RUN pnpm install --frozen-lockfile
+COPY package.json package-lock.json ./
+RUN npm ci
 
 COPY tsconfig.json ./
 COPY src/ ./src/
 
-RUN pnpm run build
+RUN npm run build
 
-FROM node:20-alpine
-
-RUN corepack enable && corepack prepare pnpm@latest --activate
+FROM node:24-alpine
 
 WORKDIR /app
 
-COPY package.json pnpm-lock.yaml ./
-RUN pnpm install --frozen-lockfile --prod
+COPY package.json package-lock.json ./
+RUN npm ci --omit=dev
 
 COPY --from=builder /app/dist ./dist
 COPY workflow/templates ./workflow/templates

@@ -2,8 +2,8 @@ import { z } from "zod";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { TaigaClient } from "../client.js";
 
-type Item = { id: number; order: number; raw: Record<string, any> };
-type Outcome = { moved: boolean; noop?: string; order: number[]; verified?: boolean; [k: string]: unknown };
+type Row = { [k: string]: unknown; version?: number; milestone?: number; status?: number; project?: number };
+type Item = { id: number; order: number; raw: Row };
 
 const asResult = (body: unknown, isError = false) => ({
   ...(isError ? { isError: true as const } : {}),
@@ -35,14 +35,19 @@ function plan(items: Item[], id: number, a: { direction?: string; before_id?: nu
 }
 
 export function registerMoveTools(server: McpServer, client: TaigaClient) {
-  const sortItems = (rows: any[], key: string, idKey = "id"): Item[] =>
-    rows
+  const sortItems = (rows: Row[], key: string, idKey = "id"): Item[] => {
+    const rank = (raw: Row) => (typeof raw[key] === "number" ? (raw[key] as number) : undefined);
+    return rows
       .map((raw, i) => ({ raw, i }))
-      .sort((a, b) => (typeof a.raw[key] === "number" && typeof b.raw[key] === "number" ? a.raw[key] - b.raw[key] : 0) || a.i - b.i)
-      .map(({ raw }) => ({ id: raw[idKey], order: raw[key], raw }));
+      .sort((a, b) => {
+        const x = rank(a.raw), y = rank(b.raw);
+        return (x !== undefined && y !== undefined ? x - y : 0) || a.i - b.i;
+      })
+      .map(({ raw }) => ({ id: raw[idKey] as number, order: raw[key] as number, raw }));
+  };
 
   const readColumn = async (params: Record<string, unknown>) =>
-    sortItems((await client.get("/tasks", { ...params, order_by: "taskboard_order" })) as any[], "taskboard_order");
+    sortItems((await client.get("/tasks", { ...params, order_by: "taskboard_order" })) as Row[], "taskboard_order");
   const bulk = (endpoint: string, body: Record<string, unknown>, seq: Item[]) =>
     client.post(`/tasks/${endpoint}`, { ...body, bulk_tasks: seq.map((t, i) => ({ task_id: t.id, order: i + 1 })) });
 
@@ -65,7 +70,7 @@ export function registerMoveTools(server: McpServer, client: TaigaClient) {
       }
       const a = { direction, before_id, after_id };
       const fail = (code: string) => asResult({ moved: false, code }, true);
-      const done = async (p: ReturnType<typeof plan> & { seq: Item[] }, reread: () => Promise<Item[]>, extra: Record<string, unknown> = {}) => {
+      const done = async (p: { seq: Item[] }, reread: () => Promise<Item[]>, extra: Record<string, unknown> = {}) => {
         const order = ids(await reread());
         // An attempted taskboard alignment that did not verify fails the whole move closed.
         const verified = order.join() === ids(p.seq).join() && extra.taskboard !== "unverified";
@@ -73,7 +78,7 @@ export function registerMoveTools(server: McpServer, client: TaigaClient) {
       };
 
       if (kind === "task") {
-        const task = (await client.get(`/tasks/${id}`)) as any;
+        const task = (await client.get(`/tasks/${id}`)) as Row;
         if (task.milestone !== container_id) return fail("container_is_not_the_task_sprint");
         const col = { milestone: container_id, status: task.status };
         const items = await readColumn(col);
@@ -81,29 +86,29 @@ export function registerMoveTools(server: McpServer, client: TaigaClient) {
         if ("error" in p) return fail(p.error!);
         if ("noop" in p) return asResult({ moved: false, noop: p.noop, order: ids(items) });
         await bulk("bulk_update_taskboard_order", { project_id: task.project, status_id: task.status, milestone_id: container_id }, p.seq!);
-        return done(p as any, async () => readColumn(col));
+        return done({ seq: p.seq! }, async () => readColumn(col));
       }
 
       if (kind === "story_in_sprint") {
-        const read = async () => sortItems((await client.get("/userstories", { milestone: container_id, order_by: "sprint_order" })) as any[], "sprint_order");
+        const read = async () => sortItems((await client.get("/userstories", { milestone: container_id, order_by: "sprint_order" })) as Row[], "sprint_order");
         const items = await read();
         const p = plan(items, id, a);
         if ("error" in p) return fail(p.error!);
         if ("noop" in p) return asResult({ moved: false, noop: p.noop, order: ids(items) });
         const sprint_order = p.side === "before" ? p.anchor!.order : p.anchor!.order + 1;
         await client.patch(`/userstories/${id}`, { sprint_order, version: items.find((i) => i.id === id)!.raw.version });
-        return done(p as any, read);
+        return done({ seq: p.seq! }, read);
       }
 
       // story_in_epic: the relation has no id of its own, it is addressed by the Story
-      const read = async () => sortItems((await client.get(`/epics/${container_id}/related_userstories`)) as any[], "order", "user_story");
+      const read = async () => sortItems((await client.get(`/epics/${container_id}/related_userstories`)) as Row[], "order", "user_story");
       const items = await read();
       const p = plan(items, id, a);
       if ("error" in p) return fail(p.error!);
       if ("noop" in p) return asResult({ moved: false, noop: p.noop, order: ids(items) });
       const order = p.side === "before" ? p.anchor!.order : p.anchor!.order + 1;
       await client.patch(`/epics/${container_id}/related_userstories/${id}`, { order });
-      return done(p as any, read);
+      return done({ seq: p.seq! }, read);
     },
   );
 }
