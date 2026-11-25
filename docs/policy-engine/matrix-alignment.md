@@ -72,6 +72,7 @@ Método: executei `resolveTransition("task", papel, origem, destino)` para os 7x
 | D-13 | Human Decision | PO decide e move, sem resolução registrada | `taiga_human_decision_resolve` + retorno fixo a `GPT Validation` | Fluxo antigo (02/11) x simplificado (11/11). |
 | D-14 | Movimento manual do PO | MCP reconcilia assignee e emite handoff | **nenhum** reconcile (só `taiga_assignees_backfill` sob demanda por Sprint) | Card parado após o PO arrastar. |
 | D-15 | Nome `GPT Validation` | `Validation` (rename) | `GPT Validation` em `project-profile.ts`, templates, RULES, mockup | Rename atravessa tudo. |
+| D-16 | Curinga `* → Cancelled` | só estados reais da matriz | o curinga legado também casa um status que o workflow não conhece (`limbo`) e o GPT/PO cancelam | **Divergência intencional do seed:** o seed só tem estados reais, então `task limbo cancelled` (gpt, po) é negado. Documentada e coberta por `policy-parity.test.ts` (D-16); nada além dessas duas entradas pode divergir. |
 
 **Leitura honesta:** a matriz **não é uma documentação do que existe**, e sim um contrato novo que difere do código em 15 pontos, e 7 deles (D-1..D-4, D-7, D-12, D-14) são exatamente os que o GPT-only exige que existam. Ou seja, **GPT-only não é "uma flag em cima do código atual": é implementar a parte da matriz que ainda falta**, com `Executor/Validator` como o mecanismo. Isso reforça M-2 e muda a recomendação: o motor deve nascer já com `owner` por campo e com `destinatário` explícito na notificação (D-12), e não só com o seed legado.
 
