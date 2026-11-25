@@ -11,7 +11,7 @@ import type { Violation } from "./validator.js";
 
 // The use cases of the policy engine, shared by the MCP and the admin API. Every change takes the project lock first.
 export class PolicyError extends Error {
-  constructor(public readonly status: 403 | 404 | 405 | 409 | 413 | 422, public readonly code: string, message: string, public readonly problems: Violation[] = []) {
+  constructor(public readonly status: 403 | 404 | 405 | 409 | 413 | 422 | 503, public readonly code: string, message: string, public readonly problems: Violation[] = []) {
     super(message);
     this.name = "PolicyError";
   }
@@ -53,7 +53,7 @@ export async function activePolicy(db: Db, projectId: string): Promise<ActivePol
   return rows[0] ? { policyId: rows[0].id, revision: Number(rows[0].revision), hash: rows[0].content_hash, policy: rows[0].payload } : null;
 }
 
-async function audit(c: pg.PoolClient, projectId: string, principal: ActorRole, operation: string, decision: string, details: object) {
+async function audit(c: pg.PoolClient, projectId: string, principal: ActorRole | "system", operation: string, decision: string, details: object) {
   await c.query(
     `INSERT INTO policy_audit (id, instance_id, project_id, principal, operation, resource_kind, decision, correlation_id, details)
      SELECT $1, instance_id, id, $2, $3, 'policy', $4, $5, $6 FROM project_binding WHERE id = $7`,
@@ -61,7 +61,7 @@ async function audit(c: pg.PoolClient, projectId: string, principal: ActorRole, 
   );
 }
 
-async function insertVersion(c: pg.PoolClient, projectId: string, policy: Policy, parentId: string | null, proposedBy: ActorRole) {
+async function insertVersion(c: pg.PoolClient, projectId: string, policy: Policy, parentId: string | null, proposedBy: ActorRole | "system") {
   const id = uuidv7();
   const hash = policyHash(policy);
   const { rows } = await c.query<{ revision: string }>(
@@ -131,4 +131,21 @@ export async function simulate(db: Db, projectId: string, q: { entity: EntityKin
   const active = await activePolicy(db, projectId);
   if (!active) throw new PolicyError(404, "not_found", "this project has no active policy");
   return { ...evaluate(active.policy, q.entity, q.role, q.from, q.to, q.facts), revision: active.revision };
+}
+
+// First policy of a project, written by the mirror (not by a person): revision 1, an approved "system" review and the activation, in the
+// caller's transaction and under the project lock. It refuses a project that already has a version, so it can never replace a policy.
+export async function bootstrapPolicy(c: pg.PoolClient, projectId: string, policy: Policy): Promise<{ revision: number; hash: string }> {
+  requireValid(policy);
+  const existing = await c.query("SELECT 1 FROM policy_version WHERE project_id = $1", [projectId]);
+  if (existing.rowCount) throw new PolicyError(409, "stale", "the project already has a policy; the bootstrap never replaces one");
+  const created = await insertVersion(c, projectId, policy, null, "system");
+  const reviewId = uuidv7();
+  const activationId = uuidv7();
+  const reason = "bootstrap: the legacy rules as the first policy";
+  await c.query("INSERT INTO policy_review (id, project_id, policy_id, decision, actor, reason) VALUES ($1,$2,$3,'approved','system',$4)", [reviewId, projectId, created.policyId, reason]);
+  await c.query("INSERT INTO policy_activation (id, project_id, policy_id, review_id, previous_activation_id, activated_by, reason) VALUES ($1,$2,$3,$4,NULL,'system',$5)", [activationId, projectId, created.policyId, reviewId, reason]);
+  await c.query("UPDATE project_binding SET active_activation_id = $1 WHERE id = $2", [activationId, projectId]);
+  await audit(c, projectId, "system", "bootstrap", "allow", { revision: created.revision, hash: created.hash });
+  return { revision: created.revision, hash: created.hash };
 }

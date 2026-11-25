@@ -59,7 +59,7 @@ test("every route answers 401 without a token, GET included, and 403 to the agen
 
 test("responses are JSON, never cached, and errors carry a correlation id", async () => {
   const ok = await call("GET", "/health");
-  assert.deepEqual([ok.status, ok.json.status, ok.json.schema, ok.headers.get("cache-control")], [200, "ok", "0001_policy_schema.sql", "no-store"]);
+  assert.deepEqual([ok.status, ok.json.status, ok.json.schema, ok.headers.get("cache-control")], [200, "ok", "0002_instance_base_url_unique.sql", "no-store"]);
   const bad = await call("GET", "/projects/not-a-uuid");
   assert.equal(bad.status, 422);
   assert.deepEqual(Object.keys(bad.json).sort(), ["code", "correlation_id", "message", "problems"]);
@@ -123,7 +123,7 @@ test("the admin API cannot start without a PO token", () => {
 
 test("the DEV reload stream exists only when it is switched on, needs no token, and carries only an id", async () => {
   assert.equal((await fetch(base.replace("/v1", "/dev-reload"))).status, 404);
-  const dev = await startAdminServer({ host: "127.0.0.1", port: 0, allowedOrigins: [] }, pool, loadActorConfig(TOKENS), createDevReload());
+  const dev = await startAdminServer({ host: "127.0.0.1", port: 0, allowedOrigins: [] }, pool, loadActorConfig(TOKENS), { devReload: createDevReload() });
   const res = await fetch(`http://127.0.0.1:${(dev.address() as { port: number }).port}/admin/api/dev-reload`);
   assert.equal(res.headers.get("content-type"), "text/event-stream");
   const reader = res.body!.getReader();
@@ -146,8 +146,27 @@ test("the health check passes against a healthy process and fails with a wrong t
   const admin = base.replace("/admin/api/v1", "");
   const good = await healthcheck({ TAIGA_MCP_ADMIN_URL: admin, TAIGA_MCP_PO_TOKEN: TOKENS.TAIGA_MCP_PO_TOKEN });
   assert.equal(good.status, 0, good.stderr);
-  assert.match(good.stdout, /healthcheck: ok \(schema 0001_policy_schema\.sql/);
+  assert.match(good.stdout, /healthcheck: ok \(schema 0002_instance_base_url_unique\.sql/);
   assert.equal((await healthcheck({ TAIGA_MCP_ADMIN_URL: admin, TAIGA_MCP_PO_TOKEN: "x".repeat(20) })).status, 1);
   assert.equal((await healthcheck({ TAIGA_MCP_ADMIN_URL: "http://127.0.0.1:1", TAIGA_MCP_PO_TOKEN: TOKENS.TAIGA_MCP_PO_TOKEN })).status, 1);
   assert.equal((await healthcheck({ TAIGA_MCP_ADMIN_URL: admin, TAIGA_MCP_PO_TOKEN: "" })).status, 1);
+});
+
+test("POST /reconcile is a dry run unless apply is true, and says so when there is no Taiga session", async () => {
+  assert.equal((await call("POST", "/reconcile", {})).json.code, "mirror_unavailable");
+  const statuses = ["To Do", "In Progress", "GPT Validation", "Human Decision", "Done", "Cancelled"].map((name, id) => ({ id: id + 1, name }));
+  const fake = {
+    getAll: async () => [{ id: 501, slug: "m", name: "Mirrored" }],
+    get: async (path: string) => (path === "/task-statuses" ? statuses : path.endsWith("custom-attributes") ? [{ id: 1, name: "UUID" }] : []),
+  } as never;
+  const s = await startAdminServer({ host: "127.0.0.1", port: 0, allowedOrigins: [] }, pool, loadActorConfig(TOKENS), { mirror: { client: fake, baseUrl: "http://t" } });
+  const url = `http://127.0.0.1:${(s.address() as { port: number }).port}/admin/api/v1/reconcile`;
+  const post = async (body: object) => (await fetch(url, { method: "POST", headers: { ...PO, "content-type": "application/json" }, body: JSON.stringify(body) })).json() as Promise<{ applied: boolean; items: { taigaProjectId: number; action: string }[] }>;
+  const dry = await post({});
+  assert.equal(dry.applied, false);
+  assert.deepEqual(dry.items.map((i) => `${i.taigaProjectId}:${i.action}`), ["7:mark_inaccessible", "501:create_managed"], "the project this fake Taiga no longer lists is inaccessible, never removed");
+  assert.equal((await pool.query("SELECT count(*)::int AS n FROM project_binding WHERE taiga_project_id = 501")).rows[0].n, 0);
+  assert.equal((await post({ apply: true })).applied, true);
+  assert.equal((await pool.query("SELECT lifecycle FROM project_binding WHERE taiga_project_id = 501")).rows[0].lifecycle, "managed");
+  s.close();
 });

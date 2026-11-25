@@ -28,7 +28,7 @@ async function main() {
     if (pool) {
       const admin = parseAdminConfig();
       const dev = process.env.TAIGA_MCP_DEV_RELOAD === "1";
-      await startAdminServer(admin, pool, actors, dev ? createDevReload() : undefined);
+      await startAdminServer(admin, pool, actors, { devReload: dev ? createDevReload() : undefined, mirror: clients?.get("po") ? { client: clients.get("po")!, baseUrl: instanceBaseUrl() } : undefined });
       if (dev) watchSources(["src", "db/migrations"].filter((d) => existsSync(d)), () => { console.error("source changed: restarting"); process.exit(0); });
       console.error(`taiga-mcp admin listening on http://${admin.host}:${admin.port}/admin/api/v1`);
     }
