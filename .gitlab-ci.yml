@@ -92,6 +92,7 @@ default:
 "Tests: Policy DB":
   extends: .tests
   script:
+    - npm run build
     - 'node scripts/ci-gate.ts "Tests: Policy DB" node scripts/run-tests.ts db'
 
 "Package Check":

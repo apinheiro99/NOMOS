@@ -7,6 +7,7 @@ import { PolicyError } from "../policy/service.js";
 import { uuidv7 } from "../identity.js";
 import { actorFromAuthorization, type ActorConfig } from "../workflow/actor.js";
 import { createAdminApi } from "./api.js";
+import { DEV_RELOAD_PATH } from "../dev-reload.js";
 
 const PREFIX = "/admin/api/v1";
 const MAX_BODY = 1_048_576;
@@ -40,7 +41,7 @@ async function readJson(req: IncomingMessage): Promise<unknown> {
 }
 
 // The private admin listener, in the same process as /mcp but on its own port. Never reachable through the tunnel.
-export function startAdminServer(config: AdminConfig, pool: pg.Pool, actors: ActorConfig): Promise<Server> {
+export function startAdminServer(config: AdminConfig, pool: pg.Pool, actors: ActorConfig, devReload?: (res: ServerResponse) => void): Promise<Server> {
   if (!actors.tokens.has("po")) throw new Error("the admin API needs TAIGA_MCP_PO_TOKEN");
   const api = createAdminApi(pool);
   const send = (res: ServerResponse, status: number, body: unknown, correlation: string) =>
@@ -55,6 +56,8 @@ export function startAdminServer(config: AdminConfig, pool: pg.Pool, actors: Act
     };
     try {
       const url = new URL(req.url ?? "/", "http://localhost");
+      // DEV only: the page's reload stream carries nothing but a process id, and a browser EventSource cannot send a bearer header.
+      if (devReload && req.method === "GET" && url.pathname === DEV_RELOAD_PATH) return devReload(res);
       if (!url.pathname.startsWith(`${PREFIX}/`)) return send(res, 404, { code: "not_found", message: "route does not exist", problems: [], correlation_id: correlation }, correlation);
       const origin = req.headers.origin;
       if ((origin !== undefined && !isOriginAllowed(origin, config.allowedOrigins)) || (isLoopback(config.host) && !isHostAllowed(req.headers.host))) {

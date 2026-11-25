@@ -1,0 +1,33 @@
+# Taiga MCP resident process (DEV): /mcp and the private admin API in ONE process, one Taiga account per actor, PostgreSQL for the policy.
+# systemd --user unit. Install:  cp deploy/dev/taiga-mcp.service ~/.config/systemd/user/ && systemctl --user daemon-reload && systemctl --user enable --now taiga-mcp
+# Configuration, tokens and Taiga accounts are NOT in this file. They live in the private EnvironmentFile (taiga-private, outside this repository):
+#   TAIGA_URL, TAIGA_USERNAME_GPT/_CLAUDE/_PO, TAIGA_PASSWORD_GPT/_CLAUDE/_PO, TAIGA_MCP_GPT_TOKEN/_CLAUDE_TOKEN/_PO_TOKEN,
+#   TAIGA_MCP_EXPECTED_ACCOUNT_GPT/_CLAUDE/_PO, DATABASE_URL
+# The admin API (8788) stays on loopback. TAIGA_MCP_DEV_RELOAD=1 makes the process exit when a source file changes (it polls, because the
+# sources live on a network share); Restart=always then rebuilds dist and starts it again. The admin and MCP launchers of production are untouched.
+[Unit]
+Description=Taiga MCP resident process (DEV)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/taiga/taiga-mcp
+EnvironmentFile=/taiga/taiga-private/runtime/taiga-mcp.env
+Environment=TAIGA_MCP_TRANSPORT=http
+Environment=TAIGA_MCP_HTTP_HOST=127.0.0.1
+Environment=TAIGA_MCP_HTTP_PORT=8787
+Environment=TAIGA_MCP_ADMIN_HOST=127.0.0.1
+Environment=TAIGA_MCP_ADMIN_PORT=8788
+Environment=TAIGA_MCP_DEV_RELOAD=1
+Environment=TAIGA_MCP_BUILD=dev
+ExecStartPre=/usr/bin/npm run build
+ExecStartPre=/usr/bin/node scripts/policy-migrate.ts
+ExecStart=/usr/bin/node dist/index.js
+# The unit counts as started only when the process answers its own health check (schema, database and the PO token all work).
+ExecStartPost=/usr/bin/node scripts/healthcheck.ts --wait
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=default.target

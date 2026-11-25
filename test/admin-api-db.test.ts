@@ -1,9 +1,11 @@
 import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
+import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import type { Server } from "node:http";
 import { startAdminServer } from "../dist/admin/server.js";
+import { createDevReload } from "../dist/dev-reload.js";
 import { parseAdminConfig } from "../dist/config.js";
 import { migrate } from "../dist/policy/migrate.js";
 import { createPool } from "../dist/policy/repository.js";
@@ -117,4 +119,35 @@ test("foreign Origin or Host is refused and the admin bind stays on loopback", a
 
 test("the admin API cannot start without a PO token", () => {
   assert.throws(() => startAdminServer({ host: "127.0.0.1", port: 0, allowedOrigins: [] }, pool, loadActorConfig({ TAIGA_MCP_GPT_TOKEN: TOKENS.TAIGA_MCP_GPT_TOKEN })), /TAIGA_MCP_PO_TOKEN/);
+});
+
+test("the DEV reload stream exists only when it is switched on, needs no token, and carries only an id", async () => {
+  assert.equal((await fetch(base.replace("/v1", "/dev-reload"))).status, 404);
+  const dev = await startAdminServer({ host: "127.0.0.1", port: 0, allowedOrigins: [] }, pool, loadActorConfig(TOKENS), createDevReload());
+  const res = await fetch(`http://127.0.0.1:${(dev.address() as { port: number }).port}/admin/api/dev-reload`);
+  assert.equal(res.headers.get("content-type"), "text/event-stream");
+  const reader = res.body!.getReader();
+  assert.match(new TextDecoder().decode((await reader.read()).value), /^data: \d+-\d+\n\n$/);
+  await reader.cancel();
+  dev.close();
+});
+
+// Async on purpose: the server under test lives in this process, which must stay free to answer the child.
+const healthcheck = (env: Record<string, string>) => new Promise<{ status: number | null; stdout: string; stderr: string }>((resolve) => {
+  const child = spawn("node", ["scripts/healthcheck.ts"], { env: { ...process.env, ...env } });
+  let stdout = "";
+  let stderr = "";
+  child.stdout.on("data", (d) => { stdout += d; });
+  child.stderr.on("data", (d) => { stderr += d; });
+  child.on("close", (status) => resolve({ status, stdout, stderr }));
+});
+
+test("the health check passes against a healthy process and fails with a wrong token or nothing listening", async () => {
+  const admin = base.replace("/admin/api/v1", "");
+  const good = await healthcheck({ TAIGA_MCP_ADMIN_URL: admin, TAIGA_MCP_PO_TOKEN: TOKENS.TAIGA_MCP_PO_TOKEN });
+  assert.equal(good.status, 0, good.stderr);
+  assert.match(good.stdout, /healthcheck: ok \(schema 0001_policy_schema\.sql/);
+  assert.equal((await healthcheck({ TAIGA_MCP_ADMIN_URL: admin, TAIGA_MCP_PO_TOKEN: "x".repeat(20) })).status, 1);
+  assert.equal((await healthcheck({ TAIGA_MCP_ADMIN_URL: "http://127.0.0.1:1", TAIGA_MCP_PO_TOKEN: TOKENS.TAIGA_MCP_PO_TOKEN })).status, 1);
+  assert.equal((await healthcheck({ TAIGA_MCP_ADMIN_URL: admin, TAIGA_MCP_PO_TOKEN: "" })).status, 1);
 });

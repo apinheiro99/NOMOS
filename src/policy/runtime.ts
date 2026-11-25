@@ -15,6 +15,12 @@ export interface PolicyRuntime {
 // or is pending, drifting or inaccessible, is refused: a database or binding problem must never turn into the permissive path.
 const LEGACY = new Set(["legacy", "archived"]);
 
+// The Taiga instance is identified by its base URL (without a trailing slash), exactly as stored in taiga_instance.base_url.
+export function instanceBaseUrl(env: NodeJS.ProcessEnv = process.env): string {
+  if (!env.TAIGA_URL) throw new Error("Missing required environment variable: TAIGA_URL");
+  return env.TAIGA_URL.replace(/\/+$/, "");
+}
+
 export function createPolicyRuntime(pool: pg.Pool, baseUrl: string): PolicyRuntime {
   return {
     async forProject(taigaProjectId) {
