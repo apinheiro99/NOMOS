@@ -145,6 +145,24 @@ export const reject = (pool: pg.Pool, projectId: string, by: ActorRole, a: { pol
     return { policyId: a.policyId };
   }));
 
+// Merge obligations still owed: `review` ones could not be proven from Taiga and wait for a person; `pending` ones are settled by the startup recovery.
+export async function listObligations(db: Db, projectId: string) {
+  const { rows } = await db.query(
+    `SELECT authorization_id, entity, taiga_id, state, actor, recipient, created_at FROM merge_obligation
+      WHERE project_id = $1 AND state IN ('pending', 'review') ORDER BY created_at`, [projectId]);
+  return rows;
+}
+
+// The PO closes a `review` obligation as abandoned: no merge authorization will be issued for it. Nothing is signed from here, and the reason is audited.
+export const resolveObligation = (pool: pg.Pool, projectId: string, by: ActorRole, a: { authorizationId: string; reason: string }) =>
+  withProjectLock(pool, projectId, (c) => withTransaction(c, async () => {
+    requirePo(by, "resolve a merge obligation");
+    const done = await c.query("UPDATE merge_obligation SET state = 'abandoned', updated_at = now() WHERE project_id = $1 AND authorization_id = $2 AND state = 'review'", [projectId, a.authorizationId]);
+    if (!done.rowCount) throw new PolicyError(404, "not_found", "no obligation in review has that id in this project");
+    await audit(c, projectId, by, "resolve_obligation", "allow", { authorizationId: a.authorizationId, reason: a.reason });
+    return { authorizationId: a.authorizationId, state: "abandoned" };
+  }));
+
 // What the active policy would decide, with the facts the caller states. Writes nothing.
 export async function simulate(db: Db, projectId: string, q: { entity: EntityKind; role: ActorRole | null; from: string; to: string; facts?: Facts }): Promise<Decision & { revision: number }> {
   const active = await activePolicy(db, projectId);

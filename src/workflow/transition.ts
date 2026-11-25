@@ -267,7 +267,7 @@ async function decideAndWrite(client: TaigaClient, identity: WorkflowIdentity, a
   // A managed project records every write it is about to make, so a crash between the comment and the status leaves evidence.
   let journalId: string | undefined;
   if (managed && runtime) {
-    try { journalId = await runtime.begin(managed, "workflow_transition", `${a.entity}:${a.id}`); } catch (e) {
+    try { journalId = await runtime.begin(managed, "workflow_transition", `${a.entity}:${a.id}`, { ref: createHash("sha256").update(signed).digest("hex"), status: a.status }); } catch (e) {
       return rejection({ ...ctxBase, code: "WORKFLOW_POLICY_UNAVAILABLE", message: `the mutation journal is not available, so nothing was written: ${(e as Error).message}` });
     }
   }
@@ -303,7 +303,8 @@ async function decideAndWrite(client: TaigaClient, identity: WorkflowIdentity, a
       return notProjected ? `${notProjected}. The artifact and the status are persisted (comment ${r.persisted.id}); only the Assigned projection is wrong, status stays authoritative.` : null;
     },
   });
-  if (journalId && runtime) {
+  // A write whose comment cannot be found in the history is an unknown outcome: the entry stays at `intent` with its evidence, and the startup reconciliation settles it from Taiga.
+  if (journalId && runtime && !(out.written && !out.result.persisted)) {
     const phase = !out.written ? "failed" : out.integrity ? "applied" : "completed";
     await runtime.finish(journalId, phase, { revision: managed?.revision, ...(out.written ? { comment_id: out.result.persisted?.id, integrity: out.integrity ?? null } : { problem: out.problem }) }).catch((e: Error) => process.stderr.write(`policy journal: ${journalId} not closed: ${e.message}\n`));
   }

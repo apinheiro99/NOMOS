@@ -14,7 +14,7 @@ export interface MergeObligation {
   // Evidence and ownership: the exact approval comment (sha256 of its text), who approved, the journal entry, and the recipient chosen at that moment.
   journalId: string; actor: "gpt" | "claude" | "po"; recipient: "gpt" | "claude" | null; approvalHash: string;
 }
-export type PendingObligation = MergeObligation & { activationId: string };
+export type PendingObligation = MergeObligation & { activationId: string; createdAt: Date };
 export type Settlement = { signed: MergeEnvelope; approvalCommentId: string } | { abandoned: true } | { review: true };
 
 export interface PolicyRuntime {
@@ -22,7 +22,10 @@ export interface PolicyRuntime {
   /** Takes the project's shared lock for a governed mutation and only THEN reads the policy, so the revision it decides on is the one that stays in force until release.
    *  Resolves to null for a legacy project; throws when the project is not safe or a policy change is running. */
   hold(taigaProjectId: number): Promise<{ managed: ManagedPolicy; release: () => Promise<void> } | null>;
-  begin(m: ManagedPolicy, operation: string, target: string): Promise<string>;
+  /** `evidence` is what a later reconciliation looks for in Taiga: the sha256 of the comment about to be written and the status the write moves the card to. */
+  begin(m: ManagedPolicy, operation: string, target: string, evidence?: { ref: string; status: number }): Promise<string>;
+  /** Journal entries still at `intent` that carry evidence and are older than `minutes`, so a request still running is never reconciled under its own feet. */
+  staleIntents(minutes: number): Promise<{ id: string; target: string; ref: string; status: number }[]>;
   finish(journalId: string, phase: "applied" | "completed" | "failed", result: object): Promise<void>;
   /** Creates a project through the provisioning intent: idempotent by request key, bound (and its first policy stored) before it is reported. */
   provision(a: { principal: string; requestKey: string; requestHash: string }, create: Parameters<typeof provisionProject>[3]): ReturnType<typeof provisionProject>;
@@ -82,10 +85,14 @@ export function createPolicyRuntime(pool: pg.Pool, baseUrl: string): PolicyRunti
         return { managed, release: async () => { release(); await done; } };
       } catch (e) { release(); await done; throw e; }
     },
-    async begin(m, operation, target) {
+    async begin(m, operation, target, evidence) {
       const id = uuidv7();
-      await pool.query("INSERT INTO mutation_journal (id, project_id, activation_id, operation, target_key, phase) VALUES ($1,$2,$3,$4,$5,'intent')", [id, m.projectId, m.activationId, operation, target]);
+      await pool.query("INSERT INTO mutation_journal (id, project_id, activation_id, operation, target_key, phase, evidence_ref, result) VALUES ($1,$2,$3,$4,$5,'intent',$6,$7)", [id, m.projectId, m.activationId, operation, target, evidence?.ref ?? null, evidence ? JSON.stringify({ status: evidence.status }) : null]);
       return id;
+    },
+    async staleIntents(minutes) {
+      const { rows } = await pool.query("SELECT id, target_key, evidence_ref, result FROM mutation_journal WHERE phase = 'intent' AND evidence_ref IS NOT NULL AND updated_at < now() - make_interval(mins => $1) ORDER BY created_at", [minutes]);
+      return rows.map((r) => ({ id: r.id, target: r.target_key, ref: r.evidence_ref, status: Number(r.result.status) }));
     },
     async finish(journalId, phase, result) {
       await pool.query("UPDATE mutation_journal SET phase = $2, result = $3, updated_at = now() WHERE id = $1", [journalId, phase, JSON.stringify(result)]);
@@ -119,8 +126,8 @@ export function createPolicyRuntime(pool: pg.Pool, baseUrl: string): PolicyRunti
       return rows[0]?.payload;
     },
     async pendingMergeObligations() {
-      const { rows } = await pool.query("SELECT authorization_id, activation_id, journal_id, actor, recipient, approval_hash, entity, taiga_id, done_status, taiga_project, context, work_item, target_work_item FROM merge_obligation WHERE state = 'pending' ORDER BY created_at");
-      return rows.map((r) => ({ authorizationId: r.authorization_id, activationId: r.activation_id, journalId: r.journal_id, actor: r.actor, recipient: r.recipient, approvalHash: r.approval_hash, entity: r.entity, taigaId: Number(r.taiga_id), doneStatus: Number(r.done_status), taigaProject: Number(r.taiga_project), context: r.context, workItem: r.work_item, targetWorkItem: r.target_work_item }));
+      const { rows } = await pool.query("SELECT authorization_id, activation_id, journal_id, actor, recipient, approval_hash, entity, taiga_id, done_status, taiga_project, context, work_item, target_work_item, created_at FROM merge_obligation WHERE state = 'pending' ORDER BY created_at");
+      return rows.map((r) => ({ authorizationId: r.authorization_id, activationId: r.activation_id, journalId: r.journal_id, actor: r.actor, recipient: r.recipient, approvalHash: r.approval_hash, entity: r.entity, taigaId: Number(r.taiga_id), doneStatus: Number(r.done_status), taigaProject: Number(r.taiga_project), context: r.context, workItem: r.work_item, targetWorkItem: r.target_work_item, createdAt: r.created_at }));
     },
   };
 }
