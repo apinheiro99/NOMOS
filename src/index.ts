@@ -29,10 +29,16 @@ async function main() {
     if (!process.env.DATABASE_URL) console.error("policy engine is OFF (TAIGA_MCP_POLICY_ENGINE=off): legacy rules only");
     const pool = process.env.DATABASE_URL ? createPool(process.env.DATABASE_URL) : undefined;
     const runtime = pool ? createPolicyRuntime(pool, instanceBaseUrl()) : undefined;
-    // A journal entry left at `intent` by a crash is settled from Taiga, so it never blocks an approval for ever.
-    if (runtime && clients?.get("po")) process.stderr.write(`mutation journal: ${JSON.stringify(await reconcileJournal(runtime, clients.get("po")!))}\n`);
-    // A Done approved before a crash still owes its merge authorization: settle every stored obligation before serving.
-    if (runtime && clients?.get("po") && process.env[PRIVATE_KEY_ENV]) process.stderr.write(`merge obligations: ${JSON.stringify(await recoverMergeObligations(runtime, clients.get("po")!, loadSigner()))}\n`);
+    // Startup: nothing of ours is in flight, so every journal entry left at `intent` is settled from Taiga now, and every Done that still owes its merge authorization
+    // (or its delivery) is finished before serving. The journal pass repeats while the process runs, for entries a failed request left behind.
+    const po = clients?.get("po");
+    const settle = async (minutes: number) => {
+      if (!runtime || !po) return;
+      process.stderr.write(`mutation journal: ${JSON.stringify(await reconcileJournal(runtime, po, minutes))}\n`);
+      if (process.env[PRIVATE_KEY_ENV]) process.stderr.write(`merge obligations: ${JSON.stringify(await recoverMergeObligations(runtime, po, loadSigner(), minutes))}\n`);
+    };
+    await settle(0);
+    if (runtime && po) setInterval(() => { settle(5).catch((e: Error) => process.stderr.write(`recovery pass failed: ${e.message}\n`)); }, 5 * 60_000).unref();
     await startHttpServer(config, clients, actors, runtime);
     console.error(`taiga-mcp listening on http://${config.host}:${config.port}${config.path}`);
     if (pool) {

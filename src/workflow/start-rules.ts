@@ -37,12 +37,12 @@ export async function storyStartRefusal(client: TaigaClient, project: number, st
   return blocker ? { kind: "story_order", ref: ref(blocker), status: nameOf(blocker), remediation: `Finish or resolve Story #${ref(blocker)}, or explicitly reorder the Sprint in Taiga so this Story is first, then retry. Nothing was reordered.` } : null;
 }
 
-const ACTIVE_ON_START = ["in progress", "request", "gpt validation", "human decision"];
+export const ACTIVE_STATUSES = ["in progress", "request", "gpt validation", "human decision"];
 export async function taskStartRefusal(client: TaigaClient, project: number, task: Row, fromTodo = false): Promise<Refusal | null> {
   const vocab = await names(client, "task", project);
   const nameOf = (r: Row) => vocab.displayById.get(r.status ?? -1) ?? "unknown";
   if (task.milestone != null) {
-    const blocking = fromTodo ? ACTIVE_ON_START : ["in progress"];
+    const blocking = fromTodo ? ACTIVE_STATUSES : ["in progress"];
     const active = ((await client.getAll("/tasks", { milestone: task.milestone })) as Row[]).find((r) => r.id !== task.id && blocking.includes(vocab.nameById.get(r.status ?? -1) ?? ""));
     if (active) return { kind: "active_task", ref: ref(active), status: nameOf(active), remediation: `Only one Task per Sprint may be active (In Progress, Request, GPT Validation or Human Decision): wait until Task #${ref(active)} is Done or Cancelled, then retry.` };
   }

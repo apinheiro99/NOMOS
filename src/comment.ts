@@ -40,8 +40,9 @@ export async function postComment(
 }
 
 // Governed workflow artifacts carry their Author in the header and have no trailing signature line.
-export async function postUnsignedComment(client: CommentClient, entityType: string, id: number, comment: string): Promise<unknown> {
+// `version` is the state the caller validated: Taiga refuses the write when the card has moved since. Without it the current version is read (free-standing comments).
+export async function postUnsignedComment(client: CommentClient, entityType: string, id: number, comment: string, version?: number): Promise<unknown> {
   const path = `/${ENDPOINTS[entityType]}/${id}`;
-  const current = (await client.get(path)) as { version: number };
-  return client.patch(path, { comment: comment.trimEnd(), version: current.version });
+  const v = version ?? ((await client.get(path)) as { version: number }).version;
+  return client.patch(path, { comment: comment.trimEnd(), version: v });
 }

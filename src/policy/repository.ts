@@ -24,24 +24,23 @@ export function createPool(connectionString: string, max = limit("TAIGA_MCP_DB_P
   return pool;
 }
 
-// Runs `fn` while holding the project lock. A policy change takes it exclusively; a governed mutation takes it shared, so mutations of one project run
-// together but never alongside a policy change. A busy lock is an error (no waiting, no retry). The lock is released in `finally`;
+// Runs `fn` while holding the project lock, exclusively: a policy change and every governed mutation of one project are serialized, because they check
+// an invariant (one active Task per Sprint, the policy in force) and then write. A busy lock is an error (no waiting, no retry). The lock is released in `finally`;
 // when the release cannot be confirmed the connection is destroyed, which makes PostgreSQL drop the session lock itself.
-export async function withProjectLock<T>(pool: pg.Pool, projectId: string, fn: (client: pg.PoolClient) => Promise<T>, shared = false): Promise<T> {
-  const suffix = shared ? "_shared" : "";
+export async function withProjectLock<T>(pool: pg.Pool, projectId: string, fn: (client: pg.PoolClient) => Promise<T>): Promise<T> {
   const client = await pool.connect();
   let discard = false;
   // A connection that dies while we hold it also reports an event; it must not crash the process, and it must not go back to the pool.
   const lost = () => { discard = true; };
   client.on("error", lost);
   try {
-    const got = await client.query<{ ok: boolean }>(`SELECT pg_try_advisory_lock${suffix}(hashtextextended($1, 0)) AS ok`, [projectId]);
+    const got = await client.query<{ ok: boolean }>(`SELECT pg_try_advisory_lock(hashtextextended($1, 0)) AS ok`, [projectId]);
     if (!got.rows[0].ok) throw new ProjectLockBusyError(projectId);
     try {
       return await fn(client);
     } finally {
       try {
-        const freed = await client.query<{ ok: boolean }>(`SELECT pg_advisory_unlock${suffix}(hashtextextended($1, 0)) AS ok`, [projectId]);
+        const freed = await client.query<{ ok: boolean }>(`SELECT pg_advisory_unlock(hashtextextended($1, 0)) AS ok`, [projectId]);
         discard = !freed.rows[0].ok;
       } catch {
         discard = true;

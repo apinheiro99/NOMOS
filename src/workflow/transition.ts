@@ -267,7 +267,7 @@ async function decideAndWrite(client: TaigaClient, identity: WorkflowIdentity, a
   // A managed project records every write it is about to make, so a crash between the comment and the status leaves evidence.
   let journalId: string | undefined;
   if (managed && runtime) {
-    try { journalId = await runtime.begin(managed, "workflow_transition", `${a.entity}:${a.id}`, { ref: createHash("sha256").update(signed).digest("hex"), status: a.status }); } catch (e) {
+    try { journalId = await runtime.begin(managed, "workflow_transition", `${a.entity}:${a.id}`, { ref: createHash("sha256").update(signed).digest("hex"), status: a.status, actor: String(role) }); } catch (e) {
       return rejection({ ...ctxBase, code: "WORKFLOW_POLICY_UNAVAILABLE", message: `the mutation journal is not available, so nothing was written: ${(e as Error).message}` });
     }
   }
@@ -287,14 +287,20 @@ async function decideAndWrite(client: TaigaClient, identity: WorkflowIdentity, a
   const out = await mutate(client, {
     read: () => client.get(`/${BASE[a.entity]}/${a.id}`),
     validators: [...(a.entity === "userstory" && from === "ready" && to === "in progress" ? [storyHasChildTask(client, a.id)] : []), ...startValidators],
-    write: async (_card, w) => {
-      await w.comment(a.entity, a.id, rendered);
+    // The version read for validation is the one the comment is written against; the status PATCH then needs exactly the version that comment produced, on a card whose
+    // status is still the one validated. Any other state means someone else wrote in between: the artifact stays, the status is NOT written, and the newer state is never adopted.
+    write: async (card, w) => {
+      const seen = card as { version: number; status: number };
+      await w.comment(a.entity, a.id, rendered, seen.version);
       const after = orderedComments((await client.get(`/history/${a.entity}/${a.id}`)) as HistoryItem[]);
       const found = [...after].reverse().find((r) => r.comment === signed);
-      return found ? { persisted: found, updated: await w.patch(a.entity, a.id, patch) } : { persisted: undefined, updated: undefined };
+      if (!found) return { persisted: undefined, updated: undefined, conflict: undefined };
+      const next = await w.patchAfterComment(a.entity, a.id, patch, seen);
+      return { persisted: found, updated: "updated" in next ? next.updated : undefined, conflict: "conflict" in next ? next.conflict : undefined };
     },
     verify: async (after, r) => {
       if (!r.persisted) return null;
+      if (r.conflict) return `${r.conflict}. The artifact is persisted (comment ${r.persisted.id}) but the status was NOT written, and the concurrent change was not overwritten: read the card, decide again and send a new transition.`;
       if (a.entity === "userstory" || a.entity === "task") {
         const failure = await closureIntegrityFailure(client, a.entity, a.id, a.status, to);
         if (failure) return `${failure}. The artifact is persisted (comment ${r.persisted.id}) and the status write was attempted: this is NOT a successful transition.`;
@@ -345,6 +351,8 @@ async function decideAndWrite(client: TaigaClient, identity: WorkflowIdentity, a
   const notice = a.entity === "task" || a.entity === "userstory" ? noticeForTransition(role, from, to, item.ref, vocab.displayById.get(a.status) ?? to, requestId, a.entity, item.project, managed ? recipientOf(managed.policy, a.entity, to) : undefined) : null;
   const authorization = mergeAuth?.merge_authorization;
   const { notification, continuation } = await announce(notice, persisted.id, process.env, authorization);
+  // The delivery of the signed envelope was attempted: only now does the journal entry that owed it complete (a crash before this point is finished by the recovery, with the same envelope).
+  if (authorizationId && authorization && journalId && runtime) await runtime.completeEffect(journalId).catch((e: Error) => process.stderr.write(`policy journal: ${journalId} effect not closed: ${e.message}\n`));
   // Exit code 0 proves only that the pointer command ran: the notifier may never have read stdin, so a signed authorization is never reported
   // as delivered. Receipt would need an acknowledgement contract from the Bridge (separate item); the envelope stays in this result.
   const handoff = authorization === undefined ? undefined : { merge_authorization_handoff: !authorizationTravels(notice, authorization) ? "not_attempted" : notification === "sent" ? "attempted_unconfirmed" : "failed" };
