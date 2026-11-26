@@ -4,7 +4,7 @@ import { loadGitgateKey, loadSigner, publicKeyB64, receiptProblems, verifyMergeA
 
 // Durable Sprint merge-ready record: the signed sprint-done envelope issued while the Sprint is still open, plus the GitGate-signed completion
 // receipt once GitGate reports it. It lives in a Taiga wiki page of the Sprint's project (Taiga stays the only store; the Bridge never holds it).
-export interface MergeReadyRecord { envelope: MergeEnvelope; receipt?: CompletionReceipt }
+export interface MergeReadyRecord { envelope: MergeEnvelope; recipient?: "gpt" | "claude" | null; receipt?: CompletionReceipt }
 export interface StoredMergeReady { record: MergeReadyRecord; page: { id: number; version: number } }
 
 export const mergeReadySlug = (milestone: number): string => `merge-ready-sprint-${milestone}`;
@@ -35,7 +35,7 @@ export const createMergeReady = (client: TaigaClient, project: number, milestone
   writeAndProve(client, project, milestone, record, (w) => w.wikiCreate({ project, slug: mergeReadySlug(milestone), content: JSON.stringify(record) }));
 
 export async function confirmMergeReady(client: TaigaClient, project: number, milestone: number, stored: StoredMergeReady, receipt: CompletionReceipt): Promise<void> {
-  const record: MergeReadyRecord = { envelope: stored.record.envelope, receipt };
+  const record: MergeReadyRecord = { envelope: stored.record.envelope, recipient: stored.record.recipient, receipt };
   await writeAndProve(client, project, milestone, record, (w) => w.wikiUpdate(stored.page.id, { content: JSON.stringify(record), version: stored.page.version }));
 }
 

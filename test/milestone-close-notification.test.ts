@@ -9,6 +9,7 @@ import { registerMilestoneTools } from "../dist/tools/milestones.js";
 import { actorFor } from "../dist/workflow/actor.js";
 import { authorizationTravels, AUTH_STDIN_ENV } from "../dist/workflow/notify.js";
 import { reconcileContinuations } from "../dist/workflow/continuation-recovery.js";
+import { legacySeed } from "../dist/policy/legacy-seed.js";
 import { foldContinuations } from "../dist/workflow/continuation.js";
 import { verifyMergeAuthorization, canonicalReceipt, PRIVATE_KEY_ENV, GITGATE_PUBLIC_KEY_ENV } from "../dist/workflow/merge-auth.js";
 import { generateKeyPairSync, createHash, createPublicKey, sign, type KeyObject } from "node:crypto";
@@ -83,10 +84,10 @@ function notifier(exitCode = 0) {
   const sent = () => lines(log); sent.stdin = () => lines(inLog);
   return sent;
 }
-async function call(tool: "taiga_milestones_update" | "taiga_milestones_prepare_close" | "taiga_milestones_confirm_merge" | "taiga_milestones_close", args: Record<string, unknown>, role: "gpt" | "claude" | "po" = "gpt") {
+async function call(tool: "taiga_milestones_update" | "taiga_milestones_prepare_close" | "taiga_milestones_confirm_merge" | "taiga_milestones_close", args: Record<string, unknown>, role: "gpt" | "claude" | "po" = "gpt", runtime?: Parameters<typeof registerMilestoneTools>[3]) {
   const reg: Record<string, { schema: z.ZodRawShape; handler: (a: unknown, e: unknown) => Promise<{ content: { text: string }[] }> }> = {};
   const server = { tool: (name: string, _d: string, schema: z.ZodRawShape, handler: never) => { reg[name] = { schema, handler }; } };
-  registerMilestoneTools(server as never, new TaigaClient(), { mode: "authenticated", actor: actorFor(role) });
+  registerMilestoneTools(server as never, new TaigaClient(), { mode: "authenticated", actor: actorFor(role) }, runtime);
   const t = reg[tool];
   return JSON.parse((await t.handler(z.object(t.schema).parse({ id: 179, ...args }), {})).content[0].text);
 }
@@ -137,6 +138,20 @@ test("prepare leaves the Sprint OPEN, signs before any terminal write, stores th
   assert.equal(verifyMergeAuthorization(r.merge_authorization, pub), true);
   assert.equal(JSON.parse(wiki!.content).envelope.claims.authorization_id, c.authorization_id, "durable record keyed to the authorization");
   assert.equal(r.merge_authorization_handoff, "not_attempted", "stdin handoff is opt-in");
+});
+
+test("GPT-only Sprint merge work stays with GPT, including recovery", async () => {
+  const policy = legacySeed();
+  policy.entities.task.states["in progress"].owner = "gpt";
+  const runtime = { forProject: async () => ({ projectId: "p", activationId: "a", revision: 2, policy }) } as never;
+  const sent = notifier();
+  const r = await call("taiga_milestones_prepare_close", { merge_context: CTX }, "gpt", runtime);
+  assert.equal(r.notification, "skipped", "same owner: no Bridge dispatch");
+  assert.deepEqual(sent(), []);
+  assert.equal(JSON.parse(wiki!.content).recipient, "gpt");
+  const { found } = await rebuild();
+  assert.equal(found.length, 1);
+  assert.equal(found[0].to, "gpt");
 });
 
 test("with the opt-in the envelope travels on stdin only, as {authorization}, and never on argv", async () => {

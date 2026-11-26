@@ -7,11 +7,13 @@ import { announce } from "../workflow/continuation.js";
 import { loadGitgateKey, loadSigner, mergeContextProblems, publicKeyB64, receiptProblems, signMergeAuthorization, verifyMergeAuthorization, type CompletionReceipt, type MergeContext, type Signer } from "../workflow/merge-auth.js";
 import { sprintScopeProblem } from "../workflow/story-readiness.js";
 import { createMergeReady, confirmMergeReady, mergeConfirmationProblem, readMergeReady } from "../workflow/merge-ready.js";
+import type { PolicyRuntime } from "../policy/runtime.js";
+import { recipientOf } from "../policy/evaluator.js";
 
 type Milestone = { id: number; project?: number; closed?: boolean };
 const refuse = (message: string) => ({ content: [{ type: "text" as const, text: JSON.stringify({ code: "REFUSED", message }) }], isError: true });
 
-export function registerMilestoneTools(server: McpServer, client: TaigaClient, identity: WorkflowIdentity = { mode: "syntactic", actor: null }) {
+export function registerMilestoneTools(server: McpServer, client: TaigaClient, identity: WorkflowIdentity = { mode: "syntactic", actor: null }, runtime?: PolicyRuntime) {
   server.tool(
     "taiga_milestones_list",
     "List milestones/sprints. Filter by project.",
@@ -113,8 +115,10 @@ export function registerMilestoneTools(server: McpServer, client: TaigaClient, i
       if (existing) problems.push(`Sprint ${id} is already prepared (authorization ${existing.record.envelope.claims.authorization_id}); a second authorization is never issued`);
       if (problems.length || !signer || sprint.project === undefined) return refuse(`${problems.join("; ")}; nothing was changed`);
       const authorization = signMergeAuthorization(signer, merge_context as unknown as MergeContext, sprint.project, { kind: "sprint", ref: id }, `Project #${sprint.project}`);
-      await createMergeReady(client, sprint.project, id, { envelope: authorization });
-      const notice: Notice | null = role === "gpt" ? { type: "SPRINT_CLOSED", to: "claude", sprintId: id, projectId: sprint.project, from: "gpt", status: "Merge ready; Sprint still open" } : null; // the PO is not a Bridge party
+      const managed = runtime ? await runtime.forProject(sprint.project) : null;
+      const recipient = managed ? recipientOf(managed.policy, "task", "done") : "claude";
+      await createMergeReady(client, sprint.project, id, { envelope: authorization, recipient });
+      const notice: Notice | null = role === "gpt" && recipient ? { type: "SPRINT_CLOSED", to: recipient, sprintId: id, projectId: sprint.project, from: "gpt", status: "Merge ready; Sprint still open" } : null; // the PO is not a Bridge party
       const { notification, continuation } = await announce(notice, authorization.claims.authorization_id, process.env, authorization);
       const handoff = !authorizationTravels(notice, authorization) ? "not_attempted" : notification === "sent" ? "attempted_unconfirmed" : "failed";
       return { content: [{ type: "text" as const, text: JSON.stringify({ merge_ready: true, closed: false, notification, ...(continuation ? { continuation } : {}), merge_authorization: authorization, merge_authorization_handoff: handoff }) }] };

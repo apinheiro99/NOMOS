@@ -101,7 +101,7 @@ export async function reconcileContinuations(client: TaigaClient, project: numbe
   for (const { id } of (await client.getAll("/milestones", { project })) as { id: number }[]) {
     const stored = await readMergeReady(client, project, id);
     if (!stored || (await mergeConfirmationProblem(client, project, id)) === null) continue;
-    await add({ type: "SPRINT_CLOSED", to: "claude", from: "gpt", entity: "milestone", ref: id, source: stored.record.envelope.claims.authorization_id, extra: { status: "Merge ready; Sprint still open" } }, new Set());
+    await add({ type: "SPRINT_CLOSED", to: stored.record.recipient ?? "claude", from: "gpt", entity: "milestone", ref: id, source: stored.record.envelope.claims.authorization_id, extra: { status: "Merge ready; Sprint still open" } }, new Set());
   }
   return { recovered, unresolved };
 }
