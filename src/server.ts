@@ -51,7 +51,7 @@ export function createTaigaMcpServer(client: TaigaClient = new TaigaClient(), id
   registerUserStoryTools(server, client);
   registerTaskTools(server, client);
   registerIssueTools(server, client);
-  registerMilestoneTools(server, client, identity);
+  registerMilestoneTools(server, client, identity, runtime);
   registerWikiTools(server, client);
   registerMembershipTools(server, client);
   registerRoleTools(server, client);
