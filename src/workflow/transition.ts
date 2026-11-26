@@ -65,7 +65,7 @@ async function childTaskProblems(client: TaigaClient, storyId: number, project: 
 }
 
 export interface TransitionArgs { entity: EntityKind; id: number; status: number; author?: string; comment?: string; artifact?: Record<string, unknown>; mergeContext?: unknown; model?: unknown; effort?: unknown }
-interface Item { project?: number; status?: number; ref?: number; user_story?: number | null; milestone?: number | null; subject?: string; sprint_order?: number; taskboard_order?: number }
+interface Item { project?: number; status?: number; version?: number; ref?: number; user_story?: number | null; milestone?: number | null; subject?: string; sprint_order?: number; taskboard_order?: number }
 
 // Everything the signed claims need from Taiga, resolved BEFORE the Done is written: the approved item's UUID and its authoritative merge
 // destination (a Task merges into its own Story, a Story into its own Sprint). Any gap fails closed with a message and zero writes.
@@ -300,7 +300,16 @@ async function decideAndWrite(client: TaigaClient, identity: WorkflowIdentity, a
   // The artifact comment and the status write go through the one governed write boundary: fresh read, separate validators, write, verification.
   const out = await mutate(client, {
     read: () => client.get(`/${BASE[a.entity]}/${a.id}`),
-    validators: [...(a.entity === "userstory" && from === "ready" && to === "in progress" ? [storyHasChildTask(client, a.id)] : []), ...startValidators],
+    validators: [
+      (fresh) => {
+        const current = fresh as { version?: number; status?: number };
+        return current.version === item.version && current.status === item.status
+          ? null
+          : `the card changed after validation (version ${String(item.version)} -> ${String(current.version)}, status ${String(item.status)} -> ${String(current.status)}); nothing was written`;
+      },
+      ...(a.entity === "userstory" && from === "ready" && to === "in progress" ? [storyHasChildTask(client, a.id)] : []),
+      ...startValidators,
+    ],
     // The version read for validation is the one the comment is written against; the status PATCH then needs exactly the version that comment produced, on a card whose
     // status is still the one validated. Any other state means someone else wrote in between: the artifact stays, the status is NOT written, and the newer state is never adopted.
     write: async (card, w) => {

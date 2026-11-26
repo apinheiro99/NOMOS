@@ -57,7 +57,9 @@ export async function promoteStoryWhenChildrenTerminal(client: TaigaClient, role
   // REPORTED next to the promotion (status stays authoritative, nothing is rolled back or retried); it never turns the promotion into a failure.
   const out = await mutate(client, {
     read: () => client.get(`/userstories/${story.id}`) as Promise<{ status?: number; version: number; assigned_to?: number | null }>,
-    validators: [(fresh) => (fresh.status === story.status ? null : "the Story is no longer In Progress")],
+    validators: [(fresh) => (fresh.status === story.status && fresh.version === story.version
+      ? null
+      : `the Story changed after readiness validation (version ${story.version} -> ${fresh.version}, status ${String(story.status)} -> ${String(fresh.status)})`)],
     write: async (fresh, w) => {
       const wroteComment = !commentId;
       if (!commentId) {

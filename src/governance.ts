@@ -330,7 +330,7 @@ export function registerGovernanceTools(server: McpServer, client: TaigaClient, 
         const cur = (await client.get(`/${base}/${id}`)) as { version: number };
         return text({ transitioned: true, entity, id, status, comment_persisted: false, updated: await client.patch(`/${base}/${id}`, { status, version: cur.version }) });
       }
-      const item = (await client.get(`/${base}/${id}`)) as { milestone?: number | null; status?: number; project?: number };
+      const item = (await client.get(`/${base}/${id}`)) as { milestone?: number | null; status?: number; version?: number; project?: number };
       if (governed) {
         const typed = await strictTransition(client, identity, { entity, id, status, author, comment: rawComment, artifact, mergeContext: merge_context, model, effort }, item, undefined, runtime);
         if (typed) return typed;
