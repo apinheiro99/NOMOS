@@ -102,7 +102,7 @@ test("an outcome that cannot be proven is kept for review, never signed and neve
   const movedOn = await open(106);
   await runtime.openMergeObligation(managed, doneBySomeoneElse);
   await runtime.openMergeObligation(managed, movedOn);
-  const both = world((path) => path.includes("/105") ? { status: 5 } : { status: 2 }, (path) => path.includes("/105") ? [] : [{ id: "c8", comment: APPROVAL(106) }]);
+  const both = world((path) => path.includes("/105") ? { status: 5 } : { status: 2 }, (path) => path.includes("/105") ? [] : [{ id: "c8", comment: APPROVAL(106), created_at: at(1) }]);
   assert.deepEqual(await recoverMergeObligations(runtime, both, signer), { signed: 0, abandoned: 0, review: 2, delivered: 0 });
   assert.deepEqual([(await stateOf(doneBySomeoneElse.authorizationId)).state, (await stateOf(movedOn.authorizationId)).state], ["review", "review"]);
   assert.deepEqual(await recoverMergeObligations(runtime, taiga(5, 105, true), signer), { signed: 0, abandoned: 0, review: 0, delivered: 0 }, "a review is not decided again by itself");
