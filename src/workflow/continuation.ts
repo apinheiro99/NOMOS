@@ -77,6 +77,9 @@ export function pendingContinuations(actor: Party, project?: number, file = cont
 
 // Persist the obligation BEFORE any dispatch, so a failed or offline Bridge cannot erase it; the persisted workflow mutation stays authoritative
 // even if recording fails (reported, never thrown). The next actor is the notice's stated recipient.
+export const deliveryDurable = (n: Notice | null, continuation?: { recorded: boolean }): boolean =>
+  n === null || continuation?.recorded === true;
+
 export async function announce(n: Notice | null, source: string, env: NodeJS.ProcessEnv = process.env, authorization?: unknown): Promise<{ notification: NotifyOutcome; continuation?: { id: string; recorded: boolean } }> {
   let continuation: { id: string; recorded: boolean } | undefined;
   if (n) {

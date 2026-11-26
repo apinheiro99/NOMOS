@@ -1,5 +1,5 @@
 import type { TaigaClient } from "../client.js";
-import { announce } from "../workflow/continuation.js";
+import { announce, deliveryDurable } from "../workflow/continuation.js";
 import { signMergeAuthorization, type MergeEnvelope, type Signer } from "../workflow/merge-auth.js";
 import { noticeForTransition } from "../workflow/notify.js";
 import { expectedOf, findComment, provenTransition, type Entry } from "./proof.js";
@@ -8,9 +8,12 @@ import type { PendingObligation, PolicyRuntime } from "./runtime.js";
 const BASE = { task: "tasks", userstory: "userstories" } as const;
 
 // The same delivery as the transition: the pointer to the other party (with the envelope on its stdin when the notifier is set up for it). The ledger id comes from the approval comment, so a repeat is the same pointer.
-async function deliver(runtime: PolicyRuntime, o: PendingObligation, ref: number | undefined, envelope: MergeEnvelope, approvalCommentId: string): Promise<void> {
-  await announce(noticeForTransition(o.actor, "gpt validation", "done", ref, "Done", undefined, o.entity, o.taigaProject, o.recipient), approvalCommentId, process.env, envelope);
+async function deliver(runtime: PolicyRuntime, o: PendingObligation, ref: number | undefined, envelope: MergeEnvelope, approvalCommentId: string): Promise<boolean> {
+  const notice = noticeForTransition(o.actor, "gpt validation", "done", ref, "Done", undefined, o.entity, o.taigaProject, o.recipient);
+  const { continuation } = await announce(notice, approvalCommentId, process.env, envelope);
+  if (!deliveryDurable(notice, continuation)) return false;
   await runtime.completeEffect(o.journalId);
+  return true;
 }
 
 // After a crash between the persisted Done and the signature, each stored obligation is settled from evidence in Taiga, never from the status alone:
@@ -25,7 +28,7 @@ export async function recoverMergeObligations(runtime: PolicyRuntime, client: Ta
   for (const o of await runtime.pendingMergeObligations()) {
     if (Date.now() - o.createdAt.getTime() < minutes * 60_000) continue;
     const card = (await client.get(`/${BASE[o.entity]}/${o.taigaId}`)) as { status?: number; ref?: number };
-    if (o.envelope) { await deliver(runtime, o, card.ref, o.envelope, o.approvalCommentId ?? ""); result.delivered += 1; continue; }
+    if (o.envelope) { if (await deliver(runtime, o, card.ref, o.envelope, o.approvalCommentId ?? "")) result.delivered += 1; continue; }
     const history = (await client.get(`/history/${o.entity}/${o.taigaId}`)) as Entry[];
     const approval = findComment(history, o.approvalHash);
     const done = card.status === o.doneStatus;
