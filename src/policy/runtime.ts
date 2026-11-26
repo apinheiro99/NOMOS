@@ -26,7 +26,7 @@ export interface PolicyRuntime {
   /** `evidence` is what a later reconciliation looks for in Taiga: the sha256 of the comment about to be written, the status the write moves the card to, and who writes it. */
   begin(m: ManagedPolicy, operation: string, target: string, evidence?: { ref: string; status: number; actor: string }): Promise<string>;
   /** Journal entries of this instance still at `intent` that carry evidence and are older than `minutes` (0 = all: at startup nothing of ours is in flight), so a request still running is never reconciled under its own feet. */
-  staleIntents(minutes: number): Promise<{ id: string; project: number; target: string; ref: string; status: number; actor?: string }[]>;
+  staleIntents(minutes: number): Promise<{ id: string; project: number; target: string; ref: string; status: number; actor?: string; startedAt: Date }[]>;
   /** `completed` stays `pending_effect` while a merge authorization is still owed for the entry; `completeEffect` closes it once the envelope is stored and delivered. */
   finish(journalId: string, phase: "applied" | "completed" | "failed", result: object): Promise<void>;
   completeEffect(journalId: string): Promise<void>;
@@ -97,10 +97,10 @@ export function createPolicyRuntime(pool: pg.Pool, baseUrl: string): PolicyRunti
     },
     async staleIntents(minutes) {
       const { rows } = await pool.query(
-        `SELECT j.id, b.taiga_project_id, j.target_key, j.evidence_ref, j.result
+        `SELECT j.id, b.taiga_project_id, j.target_key, j.evidence_ref, j.result, j.created_at
            FROM mutation_journal j JOIN project_binding b ON b.id = j.project_id JOIN taiga_instance i ON i.id = b.instance_id
           WHERE i.base_url = $1 AND j.phase = 'intent' AND j.evidence_ref IS NOT NULL AND j.updated_at < now() - make_interval(mins => $2) ORDER BY j.created_at`, [baseUrl, minutes]);
-      return rows.map((r) => ({ id: r.id, project: Number(r.taiga_project_id), target: r.target_key, ref: r.evidence_ref, status: Number(r.result.status), actor: r.result.actor }));
+      return rows.map((r) => ({ id: r.id, project: Number(r.taiga_project_id), target: r.target_key, ref: r.evidence_ref, status: Number(r.result.status), actor: r.result.actor, startedAt: r.created_at }));
     },
     async finish(journalId, phase, result) {
       await pool.query(
