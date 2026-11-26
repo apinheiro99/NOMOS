@@ -12,6 +12,7 @@ import { approve, propose, PolicyError, type TaigaAccess } from "../dist/policy/
 import { legacySeed } from "../dist/policy/legacy-seed.js";
 import type { Policy } from "../dist/policy/types.js";
 import { announce, continuationOf, foldContinuations, pendingContinuations, recordContinuation, ackContinuation } from "../dist/workflow/continuation.js";
+import { reconcileContinuations } from "../dist/workflow/continuation-recovery.js";
 import { recordHandledEvidence } from "../dist/workflow/continuation-evidence.js";
 import { renderArtifact } from "../dist/workflow/render.js";
 import { latest, loadTemplates, nameFor } from "../dist/workflow/templates.js";
@@ -66,29 +67,35 @@ async function scenario({ policy = legacySeed(), writtenAt = new Date(Date.now()
   const history = [{ id: comment, comment: text, created_at: writtenAt }];
   const base = fakeTaiga("http://t");
   const status = async (collection: string, name: string) => ((await base.client.get(`/${collection}`)) as { id: number; name: string }[]).find((s) => s.name === name)!.id;
-  const story = { id: 3, ref: 3, status: await status("userstory-statuses", "Ready") };
-  const task = { id: 7, ref: 905, status: await status("task-statuses", "Done"), user_story: 3, version: 1 };
+  const story = { id: 3, ref: 3, status: await status("userstory-statuses", "Ready"), milestone: 1 as number | null, version: 1 };
+  const task = { id: 7, ref: 905, status: await status("task-statuses", "Done"), user_story: 3 as number | null, version: 1, milestone: 1 as number | null };
   const writes: string[] = [];
   const hooks: { history?: () => Promise<unknown>; milestones?: unknown } = {};
+  const storyHistory: typeof history = [];
   const client = {
     get: async (path: string) => {
       if (path === "/tasks/by_ref" || path === "/tasks/7") return { ...task };
+      if (path === "/userstories/by_ref" || path === "/userstories/3") return { ...story };
+      if (path === "/wiki/by_slug") throw new Error("Taiga API error 404 GET /wiki/by_slug");
       if (path.startsWith("/history/")) return []; // the first page only: recovery must ask for the whole history
       return base.client.get(path);
     },
-    getAll: async (path: string) => {
-      if (path === "/milestones") return hooks.milestones ?? [{ id: 1 }];
-      if (path === "/tasks") return [task];
-      if (path === "/userstories") return [story];
+    getAll: async (path: string, params: { milestone?: number; closed?: boolean } = {}) => {
+      // Sprint 1 is open, Sprint 2 closed: a scan by open Sprint would miss what is in Sprint 2 or in none.
+      if (path === "/milestones") return hooks.milestones ?? [{ id: 1, closed: false }, { id: 2, closed: true }].filter((m) => params.closed === undefined || m.closed === params.closed);
+      const within = (card: { milestone: number | null }) => params.milestone === undefined || card.milestone === params.milestone;
+      if (path === "/tasks") return [task].filter(within);
+      if (path === "/userstories") return [story].filter(within);
+      if (path === "/history/userstory/3") return storyHistory;
       if (path === "/history/task/7") return hooks.history ? hooks.history() : history;
       return [];
     },
-    patch: async (path: string, body: { comment?: string }) => { writes.push(path); if (body.comment) history.push({ id: `h-${history.length}`, comment: body.comment, created_at: new Date(Date.now() + 2 * DAY).toISOString() }); task.version++; return { ...task }; },
+    patch: async (path: string, body: { comment?: string }) => { writes.push(path); if (body.comment) (path.startsWith("/userstories") ? storyHistory : history).push({ id: `h-${history.length}`, comment: body.comment, created_at: new Date(Date.now() + 2 * DAY).toISOString() }); task.version++; return { ...task }; },
   };
   const access = { baseUrl: "http://t", client, runtime } as unknown as TaigaAccess;
   const ask = { policyId: v.policyId, expectedRevision: 1, hash: v.hash, reason: "r" };
   const owed = continuationOf("TASK_DONE", "claude", "gpt", "task", 905, taiga, comment, { status: "Done" });
-  return { id, taiga, ask, access, hooks, history, writes, owed, comment };
+  return { id, taiga, ask, access, hooks, history, writes, owed, comment, task, story, storyHistory, status };
 }
 type Scenario = Awaited<ReturnType<typeof scenario>>;
 const snapshot = async (s: Scenario) => (await pool.query(
@@ -182,7 +189,7 @@ test("another project's lost continuation does not block this one", async () => 
   const other = await scenario();
   const s = await scenario();
   await blockedBy(other, "claude");
-  s.hooks.milestones = [];
+  s.history.length = 0; // this project owes nothing
   await passes(s);
 });
 
@@ -209,4 +216,85 @@ test("the recovery runs under the project lock: a governed mutation cannot start
   s.hooks.history = async () => { seen = await runtime.hold(s.taiga).then(() => "held", (e: unknown) => e); return s.history; };
   await refused(s, "pending_work", 409);
   assert.ok(seen instanceof ProjectLockBusyError, String(seen));
+});
+
+for (const [place, milestone] of [["an open Sprint", 1], ["a closed Sprint", 2], ["no Sprint", null]] as const) {
+  test(`a lost continuation of a Task in ${place} blocks`, async () => {
+    const s = await scenario();
+    s.task.milestone = milestone;
+    s.task.user_story = null;
+    await blockedBy(s, "claude");
+    await blockedBy(s, "claude");
+  });
+}
+
+test("a Done Task under a Done or Cancelled Story is history", async () => {
+  for (const closed of ["Done", "Cancelled"]) {
+    const s = await scenario();
+    s.story.status = await s.status("userstory-statuses", closed);
+    await passes(s);
+  }
+});
+
+// Every continuation type the source can create. The request and Sprint types are proven against their real producers in workflow.test.ts
+// ("stand-alone requests...", "Human Decision...") and milestone-close-notification.test.ts ("a lost SPRINT_CLOSED..."), same ids as emission.
+//   type                            normal producer              recovery evidence                      recipient            handled proof
+//   TASK_RELEASED                   transition (announce)        In Progress + Blueprint from To Do     policy of artifact   card marker
+//   TASK_RETURNED_TO_IN_PROGRESS    transition                   In Progress + Blueprint from Validation policy of artifact  card marker
+//   TASK_MOVED_TO_GPT_VALIDATION    transition                   GPT Validation + Handoff               policy of artifact   card marker
+//   TASK_MOVED_TO_HUMAN_DECISION    transition                   Human Decision + Decision Request      policy of artifact   card marker
+//   TASK_DONE                       transition / merge recovery  Done + Approval, Story still open      policy of artifact   card marker
+//   STORY_READY_FOR_VALIDATION      story-readiness (direct)     GPT Validation + Readiness Promotion   producer: GPT        card marker
+//   STORY_DONE                      transition / merge recovery  Done + Story Approval                  policy of artifact   card marker
+//   WORKFLOW_REQUEST_OPENED         transition / request_create  request with no answer                 policy or to_actor   card marker
+//   WORKFLOW_REQUEST_ANSWERED       request_answer               latest partial answer                  asker                card marker
+//   WORKFLOW_REQUEST_RESOLVED       request_answer               resolving answer                       asker                card marker
+//   SPRINT_CLOSED                   milestones prepare_close     merge-ready record, unconfirmed        producer: Claude     GitGate receipt
+// Here: the Story types at the approval, in every place, with the three kinds of historical policy and the handled proof.
+const storyArtifact = (name: "story_validation_approval" | "story_readiness_promotion", author: "gpt" | "claude") =>
+  renderArtifact({ template: latest(loadTemplates(), nameFor(name)), entity: "userstory", artifact: { type: name, handoff_comment_id: "h", verdict: "approved" }, author, transition: { from: "GPT Validation", to: "Done" } });
+async function storyScenario(status: string, name: "story_validation_approval" | "story_readiness_promotion", opts: Parameters<typeof scenario>[0] = {}) {
+  const s = await scenario(opts);
+  s.history.length = 0;
+  s.story.status = await s.status("userstory-statuses", status);
+  s.storyHistory.push({ id: s.comment, comment: storyArtifact(name, "gpt"), created_at: opts.writtenAt ?? new Date(Date.now() + DAY).toISOString() });
+  return s;
+}
+for (const [place, milestone] of [["an open Sprint", 1], ["a closed Sprint", 2], ["no Sprint", null]] as const) {
+  test(`STORY_DONE of a Story in ${place} blocks, and its handled marker releases it`, async () => {
+    const s = await storyScenario("Done", "story_validation_approval");
+    s.story.milestone = milestone;
+    const owed = continuationOf("STORY_DONE", "claude", "gpt", "userstory", 3, s.taiga, s.comment);
+    assert.deepEqual((await refused(s, "pending_work", 409)).problems.map((p) => p.where), [`continuation:${owed.id}`]);
+    await recordHandledEvidence(s.access.client, owed, "claude");
+    rmSync(ledger);
+    await passes(s);
+  });
+}
+test("STORY_DONE takes its recipient from the historical policy: GPT-only, legacy, or unresolved", async () => {
+  const only = await storyScenario("Done", "story_validation_approval", { policy: gptOnly() });
+  await refused(only, "pending_work", 409);
+  assert.deepEqual(pendingContinuations("gpt", only.taiga).map((c) => c.type), ["STORY_DONE"]);
+  const old = await storyScenario("Done", "story_validation_approval", { writtenAt: new Date(Date.now() - DAY).toISOString(), journaled: false });
+  await refused(old, "pending_work", 409);
+  assert.deepEqual(pendingContinuations("claude", old.taiga).map((c) => c.type), ["STORY_DONE"]);
+  await refused(await storyScenario("Done", "story_validation_approval", { journaled: false }), "continuation_unresolved", 409);
+});
+test("STORY_READY_FOR_VALIDATION is a card in an active status: the approval refuses, and recovery rebuilds it for GPT with no journal entry", async () => {
+  const s = await storyScenario("GPT Validation", "story_readiness_promotion", { journaled: false });
+  await refused(s, "active_work", 409);
+  assert.deepEqual(await reconcileContinuations(s.access.client, s.taiga, async () => undefined), { recovered: 1, unresolved: 0 });
+  assert.deepEqual(pendingContinuations("gpt", s.taiga).map((c) => c.type), ["STORY_READY_FOR_VALIDATION"]);
+});
+
+test("a workflow whose statuses cannot be classified refuses: nothing recovered is not proof", async () => {
+  for (const broken of [(l: { name: string }[]) => l.filter((x) => x.name !== "Done"), (l: { name: string }[]) => [...l, { id: 500, name: "done" }]]) {
+    const s = await scenario();
+    s.history.length = 0;
+    s.task.status = await s.status("task-statuses", "To Do");
+    const read = s.access.client.get.bind(s.access.client);
+    s.access.client.get = (async (path: string) => (path === "/task-statuses" ? broken((await read(path)) as { name: string }[]) : read(path))) as never;
+    assert.deepEqual(await reconcileContinuations(s.access.client, s.taiga), { recovered: 0, unresolved: 1 });
+    await refused(s, "continuation_unresolved", 409);
+  }
 });

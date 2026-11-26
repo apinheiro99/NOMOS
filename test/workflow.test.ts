@@ -49,7 +49,7 @@ beforeEach(() => {
       if (path === "/wiki/by_slug") return world.wiki ? ok(world.wiki) : new Response("{}", { status: 404 });
       if (path === "/milestones") return ok(world.milestones ?? [{ id: 300 }]);
       if (path === "/projects") return ok(world.projects ?? [{ id: 49 }]);
-      if (path === "/tasks") return ok(u.searchParams.has("milestone") ? [world.task.entity, ...(world.sprintTasks ?? [])] : world.storyTasks);
+      if (path === "/tasks") return ok(u.searchParams.has("milestone") || (u.searchParams.has("project") && !u.searchParams.has("user_story")) ? [world.task.entity, ...(world.sprintTasks ?? [])] : world.storyTasks);
       if (path === "/userstory-statuses") return ok([...STORY_STATUSES.filter((x) => !(world.noReadyStory && x.name === "Ready")), ...(world.dupStoryDone ? [{ id: 98, name: "done" }] : [])]);
       let m;
       if ((m = /^\/(task|userstory)-statuses\/(\d+)$/.exec(path))) return ok({ id: Number(m[2]), is_closed: world.statusClosed?.[m[1] + m[2]] ?? (m[1] === "task" ? [5, 6] : [13, 15]).includes(Number(m[2])), order: Number(m[2]) });
@@ -58,6 +58,7 @@ beforeEach(() => {
       if ((m = /^\/(tasks|userstories|epics|issues)\/by_ref$/.exec(path))) { const ref = Number(u.searchParams.get("ref")); const owner = { 905: "tasks", 1: "issues", 12: "userstories", 5: "epics", ...(world.refKind ?? {}) }[ref]; return (world.noRef ?? []).includes(`${m[1]}:${ref}`) || (owner !== undefined && owner !== m[1]) || (owner === undefined && ref !== 404 && !world.anyRef) ? new Response("{}", { status: 404 }) : ok({ id: 1000 + ref, ref, project: Number(u.searchParams.get("project")) }); }
       if ((m = /^\/(task|userstory|epic|issue)-custom-attributes$/.exec(path))) return ok(world.noUuidDef ? [] : [{ id: 7, name: "UUID" }]);
       if ((m = /^\/(tasks|userstories|epics|issues)\/custom-attributes-values\/(\d+)$/.exec(path))) { const ref = Number(m[2]) - 1000; const v = world.uuids?.[`${m[1]}:${ref}`] ?? `0190aaaa-0000-7000-8000-${String(ref).padStart(12, "0")}`; return ok({ version: 1, attributes_values: v === null ? {} : { 7: v } }); }
+      if (path === "/userstories" && u.searchParams.has("project") && !u.searchParams.get("milestone")) return ok([world.userstory.entity, ...(world.sprintRows ?? [])]);
       if (path === "/userstories" && u.searchParams.get("milestone")) return ok([world.userstory.entity, ...(world.sprintRows ?? [])].filter((r) => r.milestone === Number(u.searchParams.get("milestone"))).sort((x, y) => x.sprint_order - y.sprint_order));
       if ((m = /^\/userstories\/(\d+)$/.exec(path)) && world.sprintRows?.some((r) => r.id === Number(m[1]))) return ok({ ...world.sprintRows.find((r) => r.id === Number(m[1])) });
       if ((m = /^\/milestones\/(\d+)$/.exec(path))) return ok({ id: Number(m[1]), project: world.milestoneProject ?? 49 });
@@ -2847,19 +2848,46 @@ test("a governed Story with zero child Tasks is refused before any comment or st
   assert.equal(world.userstory.entity.status, S.prog);
 });
 
-// Task 378: Request history is evidence, never state. Recovery follows the visible status only.
-test("recovery: an old open Request comment on a Task that is visibly In Progress creates no Request obligation; the same comment on a Task in Request does", async () => {
+// A-6: a Request obligation is a fact of the card's history, not of its status: a lost ledger rebuilds the latest boundary of each request.
+test("recovery: an unanswered Request is rebuilt for its addressee even after the card was moved out of Request by hand", async () => {
   delete process.env.TAIGA_MCP_NOTIFY_COMMAND;
-  const { rmSync: rm } = await import("node:fs");
   await toRequest(); // R-905-1 stays open (never answered)
   world.task.entity.status = T.prog; // a manual PO move out of Request, no resolving answer
-  rm(process.env.TAIGA_MCP_CONTINUATION_FILE, { force: true }); // a lost ledger: recovery must rebuild from Taiga only
+  rmSync(process.env.TAIGA_MCP_CONTINUATION_FILE, { force: true }); // a lost ledger: recovery must rebuild from Taiga only
   await call("claude", "taiga_continuations_pending", { project: 49 });
-  assert.equal(pendingContinuations("gpt").some((c) => c.type === "WORKFLOW_REQUEST_OPENED"), false, "the board says In Progress: no obligation");
+  assert.equal(pendingContinuations("gpt").filter((c) => c.type === "WORKFLOW_REQUEST_OPENED").length, 1);
   assert.equal(pendingContinuations("claude").some((c) => c.type === "WORKFLOW_REQUEST_OPENED"), false);
-  world.task.entity.status = T.req; // the card visibly in Request again
-  await call("claude", "taiga_continuations_pending", { project: 49 });
-  assert.equal(pendingContinuations("gpt").some((c) => c.type === "WORKFLOW_REQUEST_OPENED"), true, "in Request, GPT owes an answer");
+});
+
+// The recovered identity and recipient equal what the real producer recorded.
+const rebuiltEquals = async (type, original) => {
+  rmSync(process.env.TAIGA_MCP_CONTINUATION_FILE, { force: true });
+  await call("gpt", "taiga_continuations_pending", { project: 49 });
+  const found = [...foldContinuations().values()].filter((c) => c.type === type);
+  assert.deepEqual(found.map((c) => [c.id, c.to, c.from, c.request_id]), [[original.id, original.to, original.from, original.request_id]], type);
+};
+
+test("recovery: stand-alone requests on a Task that is not in Request are rebuilt as opened, answered or resolved, only the latest boundary, same ids as emission", async () => {
+  delete process.env.TAIGA_MCP_NOTIFY_COMMAND;
+  await release();
+  const opened = okr(await rq("claude"));
+  const first = foldContinuations().get(opened.continuation.id);
+  await rebuiltEquals("WORKFLOW_REQUEST_OPENED", first);
+  const partial = okr(await ans("gpt", opened.request_id, { resolved: false }));
+  const second = foldContinuations().get(partial.continuation.id) ?? { ...first, id: partial.continuation.id, to: "claude", from: "gpt" };
+  await rebuiltEquals("WORKFLOW_REQUEST_ANSWERED", second);
+  assert.equal(foldContinuations().has(first.id), false, "the answered request no longer owes the opening pointer");
+  const done = okr(await ans("gpt", opened.request_id));
+  const third = { ...second, id: done.continuation.id };
+  await rebuiltEquals("WORKFLOW_REQUEST_RESOLVED", third);
+  assert.equal([...foldContinuations().values()].filter((c) => c.request_id === opened.request_id).length, 1);
+});
+
+test("recovery: Task moved to Human Decision is rebuilt with the id and recipient of its emission", async () => {
+  delete process.env.TAIGA_MCP_NOTIFY_COMMAND;
+  await release();
+  const moved = okr(await tr("claude", T.human, hdr()));
+  await rebuiltEquals("TASK_MOVED_TO_HUMAN_DECISION", foldContinuations().get(moved.continuation.id));
 });
 
 // Task 379: an agent cannot start out of order or a second active Task; the refusal is structured and writes nothing; the PO is not blocked.

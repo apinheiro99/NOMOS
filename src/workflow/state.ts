@@ -26,7 +26,7 @@ export interface Parsed {
   blueprintId?: string; handoffId?: string;
   requestId?: string; taskRef?: number; from?: string; to?: string; requestType?: string; blocking?: boolean; resolved?: boolean;
   question?: string; contextEvidence?: string[];
-  /** Human Decision Request: normalized status the Task came from (undefined for a legacy envelope). Resolution: the request it resolves and its destination. */
+  /** An artifact that moved the card: normalized status it came from (undefined for `Status unchanged` and for a legacy envelope). Human Decision Resolution: the request it resolves and its destination. */
   movedFrom?: string; decisionRequestId?: string; nextStatus?: string; nextOwner?: string;
   /** Continuation Handled evidence: the exact continuation id that was handled. */
   continuationId?: string;
@@ -109,7 +109,7 @@ export function parseArtifact(rec: Rec, set: TemplateSet): Parsed | null {
   if (p.kind === "workflow_response") { p.requestId = get("request_id"); p.resolved = get("resolved") === "yes"; }
   if (p.kind === "request_resume") p.requestId = get("request_id");
   if (p.kind === "continuation_handled") p.continuationId = get("continuation_id");
-  if (p.kind === "human_decision_request") { const m = / → /.exec(first ?? ""); if (m) p.movedFrom = first!.slice(0, m.index).trim().toLowerCase().replace(/\s+/g, " "); }
+  { const m = / → /.exec(first ?? ""); if (m) p.movedFrom = first!.slice(0, m.index).trim().toLowerCase().replace(/\s+/g, " "); }
   if (p.kind === "human_decision_resolution") { p.decisionRequestId = get("decision_request_comment_id"); p.nextStatus = get("next_status"); p.nextOwner = get("next_owner"); }
   return p;
 }
