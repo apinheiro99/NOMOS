@@ -106,8 +106,7 @@ export const rollback = (pool: pg.Pool, projectId: string, by: ActorRole, toRevi
 // A policy change must not land on top of work that was decided under the current policy and is not finished. Blockers, each listed with the record that holds it:
 //   journal entries still `intent` (outcome unknown), `applied` (comment written, status change not proven) or `pending_effect` (an effect still owed, e.g. a merge authorization not delivered);
 //   merge obligations `pending` or `review` (a `signed` one is held by its journal entry while that is `pending_effect`);
-//   continuations of this project's ledger not yet `handled` (pending or delivered). The ledger is derived state, so it is first rebuilt from Taiga (open
-//   Sprints) with the policy that authorized each event; an obligation that cannot be rebuilt refuses too. Nothing is guessed, cleared or acknowledged here.
+//   continuations of this project's ledger not yet `handled` (pending or delivered). The ledger is derived state, so it is first rebuilt from Taiga with the policy that authorized each event; an obligation that cannot be rebuilt refuses too. Nothing is guessed, cleared or acknowledged here.
 const UNFINISHED_PHASES = ["intent", "applied", "pending_effect"];
 const unreadableLedger = (e: unknown) => new PolicyError(503, "ledger_unavailable", `the continuation ledger could not be read or written, so pending work cannot be ruled out: ${(e as Error).message}`);
 const openContinuations = (project: number) => {
@@ -120,8 +119,8 @@ async function rebuildContinuations(taiga: TaigaAccess, project: number): Promis
   try { ({ unresolved } = await reconcileContinuations(taiga.client, project, (comment, writtenAt) => taiga.runtime.policyAt(project, comment, writtenAt))); }
   catch (e) { throw (e as NodeJS.ErrnoException).path === continuationFile() ? unreadableLedger(e) : unavailable("the continuation recovery", e); }
   if (!unresolved) return;
-  const detail = `${unresolved} workflow event(s) owe a continuation whose historical policy cannot be proven`;
-  throw new PolicyError(409, "continuation_unresolved", `continuations could not be safely rebuilt from the historical policy: ${detail}`, [{ code: "continuation_unresolved", where: `project:${project}`, detail }]);
+  const detail = `${unresolved} case(s) where a continuation cannot be ruled out: the historical policy of an event cannot be proven, or the workflow statuses cannot be classified`;
+  throw new PolicyError(409, "continuation_unresolved", `continuations could not be safely rebuilt: ${detail}`, [{ code: "continuation_unresolved", where: `project:${project}`, detail }]);
 }
 async function requireNoPendingWork(c: pg.PoolClient, projectId: string, taiga: TaigaAccess): Promise<void> {
   const binding = (await c.query<{ taiga_project_id: string }>("SELECT taiga_project_id FROM project_binding WHERE id = $1", [projectId])).rows[0];

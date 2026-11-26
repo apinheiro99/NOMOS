@@ -13,7 +13,7 @@ export function fakeTaiga(baseUrl = "http://t", cards: Record<string, [number, s
     baseUrl,
     runtime: { policyAt: hooks.policyAt ?? (async () => "legacy") },
     client: {
-      get: async (path: string) => { hooks.calls?.push(`GET ${path}`); await hooks.before?.(); return hooks.statuses ? hooks.statuses(path.slice(1)) : statusesOf(path.slice(1)); },
+      get: async (path: string) => { if (path === "/wiki/by_slug") throw new Error("Taiga API error 404 GET /wiki/by_slug"); hooks.calls?.push(`GET ${path}`); await hooks.before?.(); return hooks.statuses ? hooks.statuses(path.slice(1)) : statusesOf(path.slice(1)); },
       getAll: async (path: string) => {
         hooks.calls?.push(`GETALL ${path}`);
         const key = path.slice(1) as keyof typeof LISTS;

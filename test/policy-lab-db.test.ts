@@ -102,6 +102,7 @@ beforeEach(() => {
       if (path === "/history/task/7") return ok(comments);
       if (path === "/tasks/7") return ok({ ...task });
       if (path === "/tasks") return ok([task]);
+      if (path === "/wiki/by_slug") return new Response("{}", { status: 404 });
       if (path === "/milestones") return ok(task.milestone ? [{ id: 1 }] : []);
       if (path === "/userstories") return ok([]);
       if (path === "/userstory-statuses") return ok(["Ready", "In Progress", "GPT Validation", "Done", "Human Decision", "Cancelled"].map((name, i) => ({ id: i + 1, name })));

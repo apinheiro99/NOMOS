@@ -13,7 +13,7 @@ const NOT_AUTHORITY = "A continuation is a durable pointer to work, never execut
 export function registerContinuationTools(server: McpServer, client: TaigaClient, identity: WorkflowIdentity, runtime?: PolicyRuntime): void {
   server.tool(
     "taiga_continuations_pending",
-    `List the durable workflow continuations still open (pending or delivered, not handled) for the caller. GPT and Claude see only their own; the PO may pass \`actor\`. Optional \`project\` scopes it. Before listing it rebuilds any missing continuation from the authoritative Taiga state of open Sprints (same ids as normal emission, never touching existing or handled ones), so a failed ledger write is not a lost obligation. ${NOT_AUTHORITY}`,
+    `List the durable workflow continuations still open (pending or delivered, not handled) for the caller. GPT and Claude see only their own; the PO may pass \`actor\`. Optional \`project\` scopes it. Before listing it rebuilds any missing continuation from the authoritative Taiga state of the whole project (same ids as normal emission, never touching existing or handled ones), so a failed ledger write is not a lost obligation. ${NOT_AUTHORITY}`,
     { project: z.number().optional().describe("Taiga project id"), actor: z.enum(["gpt", "claude"]).optional().describe("PO only: whose continuations to list") },
     async ({ project, actor }: { project?: number; actor?: "gpt" | "claude" }) => {
       const role = identity.actor?.role;

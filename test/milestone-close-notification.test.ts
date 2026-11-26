@@ -8,6 +8,8 @@ import { TaigaClient } from "../dist/client.js";
 import { registerMilestoneTools } from "../dist/tools/milestones.js";
 import { actorFor } from "../dist/workflow/actor.js";
 import { authorizationTravels, AUTH_STDIN_ENV } from "../dist/workflow/notify.js";
+import { reconcileContinuations } from "../dist/workflow/continuation-recovery.js";
+import { foldContinuations } from "../dist/workflow/continuation.js";
 import { verifyMergeAuthorization, canonicalReceipt, PRIVATE_KEY_ENV, GITGATE_PUBLIC_KEY_ENV } from "../dist/workflow/merge-auth.js";
 import { generateKeyPairSync, createHash, createPublicKey, sign, type KeyObject } from "node:crypto";
 
@@ -51,6 +53,10 @@ beforeEach(() => {
       return new Response(JSON.stringify(sprint), { status: 200 });
     }
     if (patched && failReread) return new Response("{}", { status: 500 });
+    const path = new URL(String(url)).pathname.replace("/api/v1", "");
+    if (path === "/task-statuses") return new Response(JSON.stringify(["To Do", "In Progress", "GPT Validation", "Human Decision", "Done", "Cancelled", "Request"].map((name, i) => ({ id: i + 1, name }))), { status: 200 });
+    if (path === "/milestones") return new Response(JSON.stringify([sprint]), { status: 200 });
+    if (path === "/tasks" || path.startsWith("/history/")) return new Response("[]", { status: 200 });
     if (String(url).includes("/userstory-statuses")) return new Response(JSON.stringify(statuses), { status: 200 });
     if (String(url).includes("/userstories")) return new Response(JSON.stringify(stories), { status: 200 });
     return new Response(JSON.stringify(sprint), { status: 200 });
@@ -95,6 +101,30 @@ const RECEIPT = (auth: { claims: { authorization_id: string } }, over: Record<st
 const prepare = (role: "gpt" | "claude" | "po" = "gpt", merge_context: unknown = CTX) => call("taiga_milestones_prepare_close", { merge_context }, role);
 const confirm = (receipt: unknown, role: "gpt" | "claude" | "po" = "claude") => call("taiga_milestones_confirm_merge", { receipt }, role);
 const close = (role: "gpt" | "claude" | "po" = "gpt") => call("taiga_milestones_close", {}, role);
+
+const rebuild = async () => {
+  rmSync(process.env.TAIGA_MCP_CONTINUATION_FILE!, { force: true });
+  const out = await reconcileContinuations(new TaigaClient(), 48);
+  return { out, found: [...foldContinuations().values()] };
+};
+
+test("recovery: a lost SPRINT_CLOSED is rebuilt with the authorization id until the merge is confirmed; a closed Sprint alone creates nothing", async () => {
+  sprint.closed = true;
+  assert.deepEqual((await rebuild()).found, [], "closed without a merge-ready record owes nothing");
+  sprint.closed = false;
+  const prepared = await prepare();
+  const original = foldContinuations().get(prepared.continuation.id)!;
+  const { out, found } = await rebuild();
+  assert.equal(out.recovered, 1);
+  assert.deepEqual(found.map((c) => [c.id, c.type, c.entity, c.ref, c.project, c.to, c.from, c.source]), [[original.id, "SPRINT_CLOSED", "milestone", 179, 48, "claude", "gpt", prepared.merge_authorization.claims.authorization_id]]);
+  sprint.closed = true; // closed by hand: the merge is still not confirmed
+  assert.equal((await rebuild()).found.length, 1);
+  sprint.closed = false;
+  await confirm(RECEIPT(prepared.merge_authorization, { remote_branch_removed: false }));
+  assert.equal((await rebuild()).found.length, 1, "the source branch is not removed yet");
+  await confirm(RECEIPT(prepared.merge_authorization));
+  assert.deepEqual((await rebuild()).found, [], "the verified GitGate receipt proves it handled");
+});
 
 test("prepare leaves the Sprint OPEN, signs before any terminal write, stores the record and emits ONE merge pointer; the envelope verifies offline", async () => {
   const sent = notifier();
