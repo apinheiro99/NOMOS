@@ -18,6 +18,7 @@ import { loadSigner } from "../dist/workflow/merge-auth.js";
 import { actorFor } from "../dist/workflow/actor.js";
 import type { Policy } from "../dist/policy/types.js";
 import { connect, createTestDatabase } from "./support/pg.ts";
+import { fakeTaiga } from "./support/taiga-fake.ts";
 
 // F2.6: the MCP decides a managed (laboratory) project by its ACTIVE policy and journals the writes; an unmanaged project keeps the legacy rules.
 // Taiga is a fake here (the same shape workflow.test.ts uses); the policy database is real PostgreSQL.
@@ -42,7 +43,7 @@ const approval = (blueprintId: string, handoffId: string) => ({
   type: "validation_approval", blueprint_comment_id: blueprintId, handoff_comment_id: handoffId, commits_validated: L(), cumulative_diff_review: "reviewed", contracts_rechecked: L(), owners_rechecked: L(),
   acceptance_results: L(), tests_verified: L(), runtime_evidence_verified: L("None."), regression_hunt: L(), issues_created: L("None."), known_limits: L("None."), po_gates_not_run: L("push"), verdict: "approved",
 });
-const QUIET = { getAll: async () => [] } as never; // Taiga with nothing in flight
+const QUIET = fakeTaiga(BASE); // Taiga with nothing in flight
 let db: Awaited<ReturnType<typeof createTestDatabase>>;
 let pool: ReturnType<typeof createPool>;
 let runtime: ReturnType<typeof createPolicyRuntime>;

@@ -35,7 +35,7 @@ route("GET", "/projects/:id/audit", async (db, p, r) => ok({ items: await listAu
 route("POST", "/projects/:id/simulate", async (db, p, r) => ok(await simulate(db, projectId(p), simulateBody.parse(r.body))));
 route("POST", "/projects/:id/proposals", async (db, p, r) => ok(await propose(db, projectId(p), PO, proposeBody.parse(r.body).policy as Policy), 201));
 route("POST", "/projects/:id/proposals/:revision/approve", async (db, p, r, mirror) => {
-  return ok(await approve(db, projectId(p), PO, { policyId: await policyIdOf(db, p), ...approveBody.parse(r.body) }, mirror?.client));
+  return ok(await approve(db, projectId(p), PO, { policyId: await policyIdOf(db, p), ...approveBody.parse(r.body) }, mirror));
 });
 route("POST", "/projects/:id/proposals/:revision/reject", async (db, p, r) => ok(await reject(db, projectId(p), PO, { policyId: await policyIdOf(db, p), ...rejectBody.parse(r.body) })));
 route("GET", "/projects/:id/obligations", async (db, p) => ok({ items: await listObligations(db, projectId(p)) }));

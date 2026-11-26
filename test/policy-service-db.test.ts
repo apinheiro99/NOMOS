@@ -8,9 +8,10 @@ import { activePolicy, approve, policyHash, propose, reject, rollback, simulate,
 import { legacySeed } from "../dist/policy/legacy-seed.js";
 import type { Policy } from "../dist/policy/types.js";
 import { connect, createTestDatabase } from "./support/pg.ts";
+import { fakeTaiga } from "./support/taiga-fake.ts";
 
 // F2.3: the policy use cases on real PostgreSQL.
-const QUIET = { getAll: async () => [] } as never; // Taiga with nothing in flight
+const QUIET = fakeTaiga("http://t"); // Taiga with nothing in flight
 let db: Awaited<ReturnType<typeof createTestDatabase>>;
 let pool: ReturnType<typeof createPool>;
 before(async () => {
@@ -43,7 +44,7 @@ const expectError = (p: Promise<unknown>, status: number, code: string) =>
   assert.rejects(p, (e: PolicyError) => e instanceof PolicyError && e.status === status && e.code === code, `${status} ${code}`);
 const initial = async (pid: string) => {
   const v = await propose(pool, pid, "gpt", legacySeed());
-  await approve(pool, pid, "po", { policyId: v.policyId, expectedRevision: null, hash: v.hash, reason: "seed" });
+  await approve(pool, pid, "po", { policyId: v.policyId, expectedRevision: null, hash: v.hash, reason: "seed" }, QUIET);
   return v;
 };
 

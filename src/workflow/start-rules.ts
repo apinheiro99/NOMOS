@@ -38,6 +38,9 @@ export async function storyStartRefusal(client: TaigaClient, project: number, st
 }
 
 export const ACTIVE_STATUSES = ["in progress", "request", "gpt validation", "human decision"];
+// The statuses in which a card of each entity is work in flight (the others, e.g. Ready/Proposed/Done/Completed/Archived, are not). Epic keeps the profile's Active/Blocked plus the shared card names.
+export const activeStatusNames = (entity: EntityKind): string[] =>
+  entity === "task" ? ACTIVE_STATUSES : entity === "userstory" ? ACTIVE_STATUSES.filter((s) => s !== "request") : ["active", "blocked", ...ACTIVE_STATUSES.filter((s) => s !== "request")];
 export async function taskStartRefusal(client: TaigaClient, project: number, task: Row, fromTodo = false): Promise<Refusal | null> {
   const vocab = await names(client, "task", project);
   const nameOf = (r: Row) => vocab.displayById.get(r.status ?? -1) ?? "unknown";
