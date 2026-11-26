@@ -11,7 +11,9 @@ import { activeStatusNames } from "../workflow/start-rules.js";
 import { withProjectLock, withTransaction } from "./repository.js";
 import type { Decision, Facts, Policy } from "./types.js";
 import { validatePolicy } from "./validator.js";
-import { pendingContinuations } from "../workflow/continuation.js";
+import { continuationFile, pendingContinuations } from "../workflow/continuation.js";
+import { reconcileContinuations } from "../workflow/continuation-recovery.js";
+import type { PolicyRuntime } from "./runtime.js";
 import type { Violation } from "./validator.js";
 
 // The use cases of the policy engine, shared by the MCP and the admin API. Every change takes the project lock first.
@@ -22,8 +24,8 @@ export class PolicyError extends Error {
   }
 }
 
-// The PO's Taiga session and the instance it belongs to (the admin API's MirrorDeps).
-export interface TaigaAccess { client: TaigaClient; baseUrl: string }
+// The PO's Taiga session, the instance it belongs to and the policy runtime of that SAME instance (the admin API's MirrorDeps).
+export interface TaigaAccess { client: TaigaClient; baseUrl: string; runtime: Pick<PolicyRuntime, "policyAt"> }
 export interface ActivePolicy { policyId: string; revision: number; hash: string; policy: Policy }
 interface VersionRow { id: string; revision: string; parent_id: string | null; payload: Policy; content_hash: string }
 
@@ -104,19 +106,34 @@ export const rollback = (pool: pg.Pool, projectId: string, by: ActorRole, toRevi
 // A policy change must not land on top of work that was decided under the current policy and is not finished. Blockers, each listed with the record that holds it:
 //   journal entries still `intent` (outcome unknown), `applied` (comment written, status change not proven) or `pending_effect` (an effect still owed, e.g. a merge authorization not delivered);
 //   merge obligations `pending` or `review` (a `signed` one is held by its journal entry while that is `pending_effect`);
-//   continuations of this project's ledger not yet `handled` (pending or delivered). Nothing is guessed, cleared or acknowledged here.
+//   continuations of this project's ledger not yet `handled` (pending or delivered). The ledger is derived state, so it is first rebuilt from Taiga (open
+//   Sprints) with the policy that authorized each event; an obligation that cannot be rebuilt refuses too. Nothing is guessed, cleared or acknowledged here.
 const UNFINISHED_PHASES = ["intent", "applied", "pending_effect"];
-async function requireNoPendingWork(c: pg.PoolClient, projectId: string): Promise<void> {
+const unreadableLedger = (e: unknown) => new PolicyError(503, "ledger_unavailable", `the continuation ledger could not be read or written, so pending work cannot be ruled out: ${(e as Error).message}`);
+const openContinuations = (project: number) => {
+  try { return (["gpt", "claude"] as const).flatMap((party) => pendingContinuations(party, project)); }
+  catch (e) { throw unreadableLedger(e); }
+};
+async function rebuildContinuations(taiga: TaigaAccess, project: number): Promise<void> {
+  openContinuations(project); // an unreadable ledger is reported as such, not as a Taiga failure
+  let unresolved: number;
+  try { ({ unresolved } = await reconcileContinuations(taiga.client, project, (comment, writtenAt) => taiga.runtime.policyAt(project, comment, writtenAt))); }
+  catch (e) { throw (e as NodeJS.ErrnoException).path === continuationFile() ? unreadableLedger(e) : unavailable("the continuation recovery", e); }
+  if (!unresolved) return;
+  const detail = `${unresolved} workflow event(s) owe a continuation whose historical policy cannot be proven`;
+  throw new PolicyError(409, "continuation_unresolved", `continuations could not be safely rebuilt from the historical policy: ${detail}`, [{ code: "continuation_unresolved", where: `project:${project}`, detail }]);
+}
+async function requireNoPendingWork(c: pg.PoolClient, projectId: string, taiga: TaigaAccess): Promise<void> {
   const binding = (await c.query<{ taiga_project_id: string }>("SELECT taiga_project_id FROM project_binding WHERE id = $1", [projectId])).rows[0];
+  const project = Number(binding.taiga_project_id);
+  await rebuildContinuations(taiga, project);
   const journal = (await c.query<{ id: string; operation: string; target_key: string | null; phase: string; authorization_id: string | null; merge_state: string | null }>(
     `SELECT j.id, j.operation, j.target_key, j.phase, m.authorization_id, m.state AS merge_state
        FROM mutation_journal j LEFT JOIN merge_obligation m ON m.journal_id = j.id
       WHERE j.project_id = $1 AND j.phase = ANY($2) ORDER BY j.created_at`, [projectId, UNFINISHED_PHASES])).rows;
   const merges = (await c.query<{ authorization_id: string; entity: string; taiga_id: string; state: string; journal_id: string }>(
     `SELECT authorization_id, entity, taiga_id, state, journal_id FROM merge_obligation WHERE project_id = $1 AND state IN ('pending', 'review') ORDER BY created_at`, [projectId])).rows;
-  let ledger: ReturnType<typeof pendingContinuations>;
-  try { ledger = (["gpt", "claude"] as const).flatMap((party) => pendingContinuations(party, Number(binding.taiga_project_id))); }
-  catch (e) { throw new PolicyError(503, "ledger_unavailable", `the continuation ledger could not be read, so pending work cannot be ruled out: ${(e as Error).message}`); }
+  const ledger = openContinuations(project);
   const count = (phase: string) => journal.filter((j) => j.phase === phase).length;
   const pending = { journal_intents: count("intent"), journal_applied: count("applied"), journal_pending_effect: count("pending_effect"), merge_obligations: merges.length, continuations: ledger.length };
   if (!Object.values(pending).some((n) => n > 0)) return;
@@ -186,7 +203,7 @@ export const approve = (pool: pg.Pool, projectId: string, by: ActorRole, a: { po
     const bound = (await c.query<{ base_url: string }>("SELECT i.base_url FROM project_binding b JOIN taiga_instance i ON i.id = b.instance_id WHERE b.id = $1", [projectId])).rows[0];
     if (!bound || bound.base_url.replace(/\/+$/, "") !== taiga.baseUrl.replace(/\/+$/, "")) throw new PolicyError(409, "instance_mismatch", "the Taiga session is not the instance this project is bound to");
     await requireNoActiveWork(c, taiga.client, projectId, version.payload);
-    await requireNoPendingWork(c, projectId);
+    await requireNoPendingWork(c, projectId, taiga);
     const reviewId = uuidv7();
     const activationId = uuidv7();
     await c.query("INSERT INTO policy_review (id, project_id, policy_id, decision, actor, reason) VALUES ($1,$2,$3,'approved',$4,$5)", [reviewId, projectId, a.policyId, by, a.reason]);

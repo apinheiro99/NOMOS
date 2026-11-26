@@ -1,8 +1,7 @@
 import type pg from "pg";
-import type { TaigaClient } from "../client.js";
 import { mirrorProjects } from "../policy/mirror.js";
 import { getProject, getVersion, listAudit, listProjects, listVersions, schemaVersion } from "../policy/queries.js";
-import { approve, listObligations, PolicyError, propose, reject, resolveObligation, rollback, simulate } from "../policy/service.js";
+import { approve, listObligations, PolicyError, propose, reject, resolveObligation, rollback, simulate, type TaigaAccess } from "../policy/service.js";
 import type { Policy } from "../policy/types.js";
 import { approveBody, pageQuery, proposalsQuery, reconcileBody, proposeBody, rejectBody, rollbackBody, simulateBody, uuid } from "./schemas.js";
 
@@ -14,8 +13,8 @@ const PO = "po" as const;
 const ok = (body: unknown, status = 200): ApiResponse => ({ status, body });
 const notFound = (what: string) => new PolicyError(404, "not_found", `${what} does not exist`);
 
-// What the mirror needs to read Taiga: the PO's session and the instance it belongs to. Absent in a process that cannot reach Taiga.
-export interface MirrorDeps { client: TaigaClient; baseUrl: string }
+// What the mirror and the approval need to read Taiga. Absent in a process that cannot reach Taiga.
+export type MirrorDeps = TaigaAccess;
 type Handler = (db: pg.Pool, p: string[], r: ApiRequest, mirror?: MirrorDeps) => Promise<ApiResponse>;
 const routes: { method: string; pattern: RegExp; handle: Handler }[] = [];
 const route = (method: string, pattern: string, handle: Handler) =>

@@ -42,7 +42,7 @@ export async function reconcileContinuations(client: TaigaClient, project: numbe
     const c = continuationOf(type, to, from, entity, ref, project, artifact.id, extra);
     if (!handled.has(c.id) && !recordContinuation(c).duplicate) recovered++;
   };
-  const analysed = async (kind: "task" | "userstory", id: number) => analyse((await client.get(`/history/${kind}/${id}`)) as HistoryItem[], set);
+  const analysed = async (kind: "task" | "userstory", id: number) => analyse((await client.getAll(`/history/${kind}/${id}`)) as HistoryItem[], set);
 
   for (const { id: milestone } of milestones) {
     const stories = (await client.getAll("/userstories", { milestone })) as Row[];
