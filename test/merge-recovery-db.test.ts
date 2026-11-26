@@ -81,6 +81,15 @@ test("a crash after the Done: recovery proves the approval and the Done, signs o
   assert.deepEqual([bound.activation_id, bound.journal_id, bound.actor, bound.recipient, bound.approval_comment_id], [managed.activationId, o.journalId, "gpt", "claude", "c9"]);
 });
 
+test("an identical approval older than the merge obligation is not evidence for that obligation", async () => {
+  const o = await open(108);
+  await runtime.openMergeObligation(managed, o);
+  const old = new Date(Date.now() - 3_600_000).toISOString();
+  const client = world(() => ({ status: 2 }), () => [{ ...approvalEntry(108), created_at: old }]);
+  assert.deepEqual(await recoverMergeObligations(runtime, client, signer), { signed: 0, abandoned: 1, review: 0, delivered: 0 });
+  assert.equal((await stateOf(o.authorizationId)).state, "abandoned");
+});
+
 test("neither the approval nor the Done in Taiga: the Done never happened and the obligation is abandoned", async () => {
   const o = await open(102);
   await runtime.openMergeObligation(managed, o);
