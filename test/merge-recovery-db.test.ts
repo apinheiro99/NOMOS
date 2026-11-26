@@ -156,6 +156,21 @@ test("a journal entry left at intent is settled from Taiga for a Task and an Epi
   assert.deepEqual(await reconcileJournal(runtime, world5, 0), { completed: 0, applied: 0, failed: 1 }, "at startup the fresh entry is taken too: its comment never reached Taiga");
 });
 
+test("journal recovery never proves a new intent from an identical old comment", async () => {
+  const id = await runtime.begin(managed, "workflow_transition", "task:206", { ref: hash("OLD-SAME"), status: 5, actor: "gpt" });
+  await pool.query("UPDATE mutation_journal SET updated_at = now() - interval '10 minutes' WHERE id = $1", [id]);
+  const old = new Date(Date.now() - 3_600_000).toISOString();
+  const history = [
+    { id: "old-comment", comment: "OLD-SAME", created_at: old, user: { pk: 1 } },
+    { id: "old-done", created_at: new Date(Date.now() - 3_599_000).toISOString(), user: { pk: 1 }, values_diff: { status: ["GPT Validation", "Done"] } },
+  ];
+  const client = withHistory(206, history);
+  assert.deepEqual(await reconcileJournal(runtime, client), { completed: 0, applied: 0, failed: 1 });
+  const row = (await pool.query("SELECT phase, result FROM mutation_journal WHERE id = $1", [id])).rows[0];
+  assert.equal(row.phase, "failed");
+  assert.match(row.result.problem, /comment is not in the history/);
+});
+
 test("a Done that owes its authorization stays pending_effect until the envelope is stored and delivered; a crash in between is finished with the SAME envelope", async () => {
   const phaseOf = async (id: string) => (await pool.query("SELECT phase FROM mutation_journal WHERE id = $1", [id])).rows[0].phase;
   // Crash after the write and before the signature: the journal was finished by the transition, but the obligation is still owed.

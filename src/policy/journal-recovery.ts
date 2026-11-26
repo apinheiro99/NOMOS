@@ -17,11 +17,11 @@ export async function reconcileJournal(runtime: PolicyRuntime, client: TaigaClie
   for (const j of await runtime.staleIntents(minutes)) {
     const [entity, id] = j.target.split(":") as [EntityKind, string];
     const history = (await client.get(`/history/${entity}/${id}`)) as Entry[];
-    const found = findComment(history, j.ref);
+    const found = findComment(history, j.ref, j.startedAt);
     if (!found) { await runtime.finish(j.id, "failed", { problem: "the comment is not in the history: the write did not happen" }); result.failed += 1; continue; }
     const card = (await client.get(`/${BASE[entity]}/${id}`)) as { status?: number };
     const expected = j.actor && card.status === j.status ? await expectedOf(client, entity, j.project, j.actor as ActorRole, j.status) : undefined;
-    const proven = expected !== undefined && provenTransition(history, j.ref, expected) !== undefined;
+    const proven = expected !== undefined && provenTransition(history, j.ref, expected, j.startedAt) !== undefined;
     await runtime.finish(j.id, proven ? "completed" : "applied", { comment_id: found.id, ...(proven ? {} : { problem: "the artifact is persisted but the status change is not proven" }) });
     result[proven ? "completed" : "applied"] += 1;
   }

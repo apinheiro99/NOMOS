@@ -13,8 +13,8 @@ export const sha256 = (text: string) => createHash("sha256").update(text).digest
 const byTime = (a: Entry, b: Entry) => Date.parse(a.created_at ?? "") - Date.parse(b.created_at ?? "");
 
 // The comment whose text hashes to `ref`: still there (not deleted, not edited since it was written).
-export const findComment = (history: Entry[], ref: string): Entry | undefined =>
-  history.find((h) => typeof h.comment === "string" && !h.delete_comment_date && !h.edit_comment_date && sha256(h.comment) === ref);
+export const findComment = (history: Entry[], ref: string, since?: Date): Entry | undefined =>
+  history.find((h) => typeof h.comment === "string" && !h.delete_comment_date && !h.edit_comment_date && sha256(h.comment) === ref && (!since || (h.created_at !== undefined && Date.parse(h.created_at) >= since.getTime())));
 
 // The Taiga user and the status name that identify the transition being proven.
 export type Expected = { actorPk: number; toStatus: string };
@@ -24,7 +24,7 @@ export type Expected = { actorPk: number; toStatus: string };
 // before or after). A card that merely sits in the status, e.g. a manual move after an old comment, proves nothing.
 export function provenTransition(history: Entry[], ref: string, expected: Expected, since?: Date): Entry | undefined {
   const entries = history.every((h) => h.created_at) ? [...history].sort(byTime) : history;
-  const comment = findComment(entries, ref);
+  const comment = findComment(entries, ref, since);
   if (!comment || comment.user?.pk !== expected.actorPk) return undefined;
   if (since && (!comment.created_at || Date.parse(comment.created_at) < since.getTime())) return undefined;
   const changes = entries.filter((h) => h.values_diff?.status !== undefined);
