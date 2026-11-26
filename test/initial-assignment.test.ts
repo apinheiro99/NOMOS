@@ -21,7 +21,7 @@ const USERS = [{ id: 71, username: "chatgpt", is_active: true }, { id: 72, usern
 const realFetch = globalThis.fetch;
 const saved: Record<string, string | undefined> = {};
 type Row = Record<string, unknown>;
-let world: { tasks: Row[]; stories: Row[]; users: Row[]; next: number; writes: { method: string; path: string; body: unknown }[]; ignoreAssignee: boolean; afterCreate?: (row: Row) => void };
+let world: { tasks: Row[]; stories: Row[]; users: Row[]; next: number; writes: { method: string; path: string; body: unknown }[]; ignoreAssignee: boolean; afterCreate?: (row: Row) => void; beforeCardRead?: (row: Row) => void };
 let dir: string;
 
 beforeEach(() => {
@@ -51,7 +51,11 @@ beforeEach(() => {
       if (path === "/tasks") return json(world.tasks);
       if (path === "/userstories") return json(world.stories);
       if (path === "/userstories/by_ref") return json(world.stories.at(-1));
-      if ((m = /^\/(tasks|userstories)\/(\d+)$/.exec(path))) return json((m[1] === "tasks" ? world.tasks : world.stories).find((r) => r.id === Number(m![2])));
+      if ((m = /^\/(tasks|userstories)\/(\d+)$/.exec(path))) {
+        const row = (m[1] === "tasks" ? world.tasks : world.stories).find((r) => r.id === Number(m![2]))!;
+        world.beforeCardRead?.(row);
+        return json(row);
+      }
       return json([]);
     }
     if (method === "POST") {
@@ -159,6 +163,26 @@ test("creation rereads the card from Taiga before the assignment: the fresh vers
   const patch = world.writes.find((w) => w.method === "PATCH" && w.body.assigned_to !== undefined)!;
   assert.equal(patch.body.version, 5, "version from the fresh read, not the create response (1)");
   assert.equal(world.tasks[0].assigned_to, 71);
+});
+
+test("creation never writes the old owner after the card changes status", async () => {
+  world.afterCreate = (row) => { row.status = 2; row.version = 2; };
+  await call("taiga_tasks_create", { user_story: 1, project: 49, subject: "t" });
+  assert.equal(world.tasks[0].status, 2);
+  assert.equal(world.tasks[0].assigned_to, null);
+  assert.ok(!world.writes.some((w) => w.method === "PATCH" && w.body?.assigned_to !== undefined), "the To Do owner is never projected onto In Progress");
+});
+
+test("backfill never writes an owner calculated from a status that changed before the PATCH", async () => {
+  world.tasks.push({ id: 3, ref: 377, version: 2, status: 1, assigned_to: null });
+  let changed = false;
+  world.beforeCardRead = (row) => { if (!changed && row.id === 3) { changed = true; row.status = 2; row.version = 3; } };
+  const out = await backfillSprintAssignees(new TaigaClient(), 187, false);
+  assert.equal(world.tasks[0].assigned_to, null);
+  assert.equal(out.updated.length, 0);
+  assert.equal(out.failed.length, 1);
+  assert.match((out.failed[0] as { problem: string }).problem, /status changed during backfill/);
+  assert.ok(!world.writes.some((w) => w.method === "PATCH"), "no stale-owner write");
 });
 
 test("creation skips the assignment write when the fresh card is already assigned correctly", async () => {
