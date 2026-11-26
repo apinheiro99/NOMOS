@@ -61,7 +61,7 @@ const world = (card: (path: string) => unknown, history: (path: string) => objec
   get: async (path: string) => path.startsWith("/history") ? history(path) : path.includes("-statuses/") ? { name: "Done" } : card(path),
   getAll: async () => [{ id: 1, username: "gpt-account", is_active: true }, { id: 2, username: "someone-else", is_active: true }],
 }) as never;
-const taiga = (status: number, taigaId: number, approved: boolean) => world(() => ({ status }), () => approved ? [approvalEntry(taigaId), doneEntry(1, 2)] : [{ id: "c1", comment: "something else" }]);
+const taiga = (status: number, taigaId: number, approved: boolean) => world(() => ({ status, ref: taigaId }), () => approved ? [approvalEntry(taigaId), doneEntry(1, 2)] : [{ id: "c1", comment: "something else" }]);
 const withHistory = (_taigaId: number, history: object[]) => world(() => ({ status: 5 }), () => history);
 const stateOf = async (id: string) => (await pool.query("SELECT state, envelope FROM merge_obligation WHERE authorization_id = $1", [id])).rows[0];
 
