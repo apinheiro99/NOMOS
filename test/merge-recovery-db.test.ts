@@ -187,6 +187,11 @@ test("a Done that owes its authorization stays pending_effect until the envelope
   const envelope = signMergeAuthorization(signer, p.context, 49, p.workItem, p.targetWorkItem, p.authorizationId);
   await runtime.settleMergeObligation(p.authorizationId, { signed: envelope, approvalCommentId: "c9" });
   assert.equal(await phaseOf(p.journalId), "pending_effect");
+  const goodContinuationFile = process.env.TAIGA_MCP_CONTINUATION_FILE!;
+  process.env.TAIGA_MCP_CONTINUATION_FILE = join(tmpdir(), randomUUID(), "continuations.jsonl");
+  assert.deepEqual(await recoverMergeObligations(runtime, taiga(5, 302, true), signer), { signed: 0, abandoned: 0, review: 0, delivered: 0 }, "a failed durable continuation write is not delivery");
+  assert.equal(await phaseOf(p.journalId), "pending_effect", "the recovery remains retryable");
+  process.env.TAIGA_MCP_CONTINUATION_FILE = goodContinuationFile;
   assert.deepEqual(await recoverMergeObligations(runtime, taiga(5, 302, true), signer), { signed: 0, abandoned: 0, review: 0, delivered: 1 });
   assert.deepEqual((await stateOf(p.authorizationId)).envelope, envelope);
   assert.equal(await phaseOf(p.journalId), "completed");

@@ -4,7 +4,15 @@ import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "no
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { noticeForTransition } from "../dist/workflow/notify.js";
-import { announce, pendingContinuations } from "../dist/workflow/continuation.js";
+import { announce, deliveryDurable, pendingContinuations } from "../dist/workflow/continuation.js";
+
+test("delivery is durable only after the required continuation was persisted", () => {
+  const notice = noticeForTransition("gpt", "gpt validation", "done", 7, "Done", undefined, "task", 49, "claude")!;
+  assert.equal(deliveryDurable(notice, { recorded: true }), true);
+  assert.equal(deliveryDurable(notice, { recorded: false }), false);
+  assert.equal(deliveryDurable(notice, undefined), false);
+  assert.equal(deliveryDurable(null, undefined), true, "no notice means no durable delivery is owed");
+});
 
 // F3.3: a notice states its recipient. Same actor = no Bridge dispatch, but the continuation (the local obligation) is still recorded.
 test("the recipient is the other party by default, and the one the policy names when given", () => {

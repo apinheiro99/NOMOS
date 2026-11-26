@@ -18,7 +18,7 @@ import { storyHasChildTask } from "./validators.js";
 import { refusalMessage, storyStartRefusal, taskStartRefusal, type Refusal } from "./start-rules.js";
 import { BASE, STATUS_BASE, text, violation, type ToolResult } from "./result.js";
 import { authorizationTravels, noticeForTransition } from "./notify.js";
-import { announce } from "./continuation.js";
+import { announce, deliveryDurable } from "./continuation.js";
 import { moveClosedStoryToTail } from "./story-order.js";
 import { childTaskStates, promoteStoryWhenChildrenTerminal } from "./story-readiness.js";
 
@@ -376,7 +376,7 @@ async function decideAndWrite(client: TaigaClient, identity: WorkflowIdentity, a
   const authorization = mergeAuth?.merge_authorization;
   const { notification, continuation } = await announce(notice, persisted.id, process.env, authorization);
   // The delivery of the signed envelope was attempted: only now does the journal entry that owed it complete (a crash before this point is finished by the recovery, with the same envelope).
-  if (authorizationId && authorization && journalId && runtime) await runtime.completeEffect(journalId).catch((e: Error) => process.stderr.write(`policy journal: ${journalId} effect not closed: ${e.message}\n`));
+  if (authorizationId && authorization && journalId && runtime && deliveryDurable(notice, continuation)) await runtime.completeEffect(journalId).catch((e: Error) => process.stderr.write(`policy journal: ${journalId} effect not closed: ${e.message}\n`));
   // Exit code 0 proves only that the pointer command ran: the notifier may never have read stdin, so a signed authorization is never reported
   // as delivered. Receipt would need an acknowledgement contract from the Bridge (separate item); the envelope stays in this result.
   const handoff = authorization === undefined ? undefined : { merge_authorization_handoff: !authorizationTravels(notice, authorization) ? "not_attempted" : notification === "sent" ? "attempted_unconfirmed" : "failed" };
