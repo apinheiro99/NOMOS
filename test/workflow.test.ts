@@ -2883,6 +2883,15 @@ test("recovery: stand-alone requests on a Task that is not in Request are rebuil
   assert.equal([...foldContinuations().values()].filter((c) => c.request_id === opened.request_id).length, 1);
 });
 
+test("recovery: released and returned Tasks are rebuilt with the type, id and recipient of their emission", async () => {
+  delete process.env.TAIGA_MCP_NOTIFY_COMMAND;
+  const released = okr(await tr("gpt", T.prog, blueprint()));
+  await rebuiltEquals("TASK_RELEASED", foldContinuations().get(released.continuation.id));
+  okr(await tr("claude", T.val, handoff({ blueprint_comment_id: bpId() })));
+  const returned = okr(await tr("gpt", T.prog, correction({ supersedes_blueprint_comment_id: bpId() })));
+  await rebuiltEquals("TASK_RETURNED_TO_IN_PROGRESS", foldContinuations().get(returned.continuation.id));
+});
+
 test("recovery: Task moved to Human Decision is rebuilt with the id and recipient of its emission", async () => {
   delete process.env.TAIGA_MCP_NOTIFY_COMMAND;
   await release();
