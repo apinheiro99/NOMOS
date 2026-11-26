@@ -8,6 +8,7 @@ import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { TaigaClient } from "../dist/client.js";
 import { createTaigaMcpServer } from "../dist/server.js";
 import { actorFor, loadActorConfig, identityFromEnv } from "../dist/workflow/actor.js";
+import { promoteStoryWhenChildrenTerminal } from "../dist/workflow/story-readiness.js";
 import { exact, loadTemplates, latest, compareSemVer, parseSemVer, templatesDir } from "../dist/workflow/templates.js";
 
 // Executable workflow contract: authenticated actors, actor/state matrix, versioned Markdown artifacts, free-comment
@@ -356,6 +357,27 @@ test("Done: only GPT/PO with a Validation Approval that cites the current bluepr
   const r = okr(await tr("gpt", T.done, approval({ blueprint_comment_id: bp, handoff_comment_id: ho })));
   assert.equal(r.closed, true);
   assert.match(lastComment().comment, /^GPT Validation → Done\nSchema: Validation Approval 1\.0\.0\nAuthor: GPT\nModel: Unknown\nEffort: Unknown\nBlueprint: .+\nHandoff: /);
+});
+
+test("a card change after workflow validation but before the write boundary is never adopted", async () => {
+  let reads = 0;
+  const upstream = globalThis.fetch;
+  globalThis.fetch = async (url, init = {}) => {
+    const path = new URL(String(url)).pathname.replace(/^.*\/api\/v1/, "");
+    if ((init.method ?? "GET") === "GET" && path === "/tasks/7" && ++reads === 3) {
+      world.task.entity.version += 1;
+      world.task.entity.status = T.human;
+    }
+    return upstream(url, init);
+  };
+  try {
+    const r = await tr("gpt", T.prog, blueprint());
+    assert.equal(r.isError, true);
+    assert.match(r.content[0].text, /changed after validation/);
+    assert.equal(world.task.comments.length, 0);
+    assert.equal(world.task.entity.status, T.human, "the concurrent state is authoritative");
+    assert.equal(requests.some((x) => x.method === "PATCH"), false, "no write after the validated version changed");
+  } finally { globalThis.fetch = upstream; }
 });
 
 test("a change by the PO between validation, comment and status write is detected and never overwritten", async () => {
@@ -2423,6 +2445,28 @@ test("replay: a later terminal transition on a Story already in GPT Validation w
   world.task.entity.status = T.todo; world.task.comments = [];
   assert.deepEqual((await approveTask()).story_promotion, { promoted: false, reason: "story_not_in_progress" });
   assert.equal(readinessComments().length, 1);
+});
+
+test("Story readiness never adopts a Story version that changed after readiness was validated", async () => {
+  world.userstory.entity.status = S.prog;
+  world.userstory.entity.version = 3;
+  world.storyTasks = [{ id: 1001, ref: 901, status: T.done }, { id: 1002, ref: 902, status: T.done }];
+  let reads = 0;
+  const upstream = globalThis.fetch;
+  globalThis.fetch = async (url, init = {}) => {
+    const path = new URL(String(url)).pathname.replace(/^.*\/api\/v1/, "");
+    if ((init.method ?? "GET") === "GET" && path === "/userstories/7" && ++reads === 2) {
+      world.userstory.entity.version += 1;
+    }
+    return upstream(url, init);
+  };
+  try {
+    const r = await promoteStoryWhenChildrenTerminal(new TaigaClient(), "gpt", { ref: 901, user_story: 7, project: 49 }, {});
+    assert.deepEqual(r, { promoted: false, reason: "story_not_in_progress" });
+    assert.equal(world.userstory.entity.status, S.prog);
+    assert.equal(readinessComments().length, 0, "no readiness evidence is written against an unvalidated version");
+    assert.equal(requests.some((x) => x.method === "PATCH" && x.path === "/userstories/7"), false);
+  } finally { globalThis.fetch = upstream; }
 });
 
 test("a lost status claim (concurrent promotion) leaves the Story In Progress, is reported without failing the Task, and the next attempt reuses the comment instead of duplicating it", async () => {
