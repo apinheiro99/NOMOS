@@ -8,6 +8,7 @@ import { createPolicyRuntime } from "../dist/policy/runtime.js";
 import { legacySeed } from "../dist/policy/legacy-seed.js";
 import { activePolicy, approve, propose } from "../dist/policy/service.js";
 import { connect, createTestDatabase } from "./support/pg.ts";
+import { fakeTaiga } from "./support/taiga-fake.ts";
 
 // F3.1: the mirror, on real PostgreSQL with a fake Taiga. It reads Taiga, never writes a card, and never replaces a policy.
 const BASE = "http://taiga.invalid";
@@ -209,7 +210,7 @@ test("a plan made before the lock never overwrites what changed since: an activa
   await sync(); // another reconcile gets there first
   const bindingId = (await pool.query("SELECT id FROM project_binding WHERE taiga_project_id = 61")).rows[0].id;
   const v = await propose(pool, bindingId, "gpt", legacySeed());
-  await approve(pool, bindingId, "po", { policyId: v.policyId, expectedRevision: 1, hash: v.hash, reason: "second" }, { getAll: async () => [] } as never);
+  await approve(pool, bindingId, "po", { policyId: v.policyId, expectedRevision: 1, hash: v.hash, reason: "second" }, fakeTaiga(BASE));
   const active = async () => (await pool.query("SELECT active_activation_id, lifecycle FROM project_binding WHERE id = $1", [bindingId])).rows[0];
   const settled = await active();
   const instance = (await pool.query("SELECT instance_id FROM project_binding WHERE id = $1", [bindingId])).rows[0].instance_id;

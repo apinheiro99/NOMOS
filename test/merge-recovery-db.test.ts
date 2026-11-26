@@ -15,6 +15,7 @@ import { recoverMergeObligations } from "../dist/policy/merge-recovery.js";
 import { reconcileJournal } from "../dist/policy/journal-recovery.js";
 import { loadSigner, signMergeAuthorization, publicKeyB64, verifyMergeAuthorization, type MergeEnvelope } from "../dist/workflow/merge-auth.js";
 import { connect, createTestDatabase } from "./support/pg.ts";
+import { fakeTaiga } from "./support/taiga-fake.ts";
 
 // F3.4: the authorization owed by a Done is stored before the Done, and a crash after the Done is recovered once, from the stored context.
 let db: Awaited<ReturnType<typeof createTestDatabase>>;
@@ -36,7 +37,7 @@ before(async () => {
   await pool.query("INSERT INTO taiga_instance (id, instance_key, base_url) VALUES ($1,'lab','http://taiga.invalid')", [instance]);
   await pool.query("INSERT INTO project_binding (id, instance_id, taiga_project_id, slug, name, lifecycle) VALUES ($1,$2,49,'lab','Lab','managed')", [binding, instance]);
   const v = await propose(pool, binding, "gpt", legacySeed());
-  await approve(pool, binding, "po", { policyId: v.policyId, expectedRevision: null, hash: v.hash, reason: "seed" });
+  await approve(pool, binding, "po", { policyId: v.policyId, expectedRevision: null, hash: v.hash, reason: "seed" }, fakeTaiga("http://taiga.invalid"));
   managed = (await runtime.forProject(49))!;
 });
 after(async () => { delete process.env.TAIGA_MCP_EXPECTED_ACCOUNT_GPT; delete process.env.TAIGA_MCP_CONTINUATION_FILE; await pool.end(); await db.drop(); });

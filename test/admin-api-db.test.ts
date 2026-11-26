@@ -14,6 +14,7 @@ import { approve, propose } from "../dist/policy/service.js";
 import { createPolicyRuntime } from "../dist/policy/runtime.js";
 import { loadActorConfig } from "../dist/workflow/actor.js";
 import { connect, createTestDatabase } from "./support/pg.ts";
+import { fakeTaiga } from "./support/taiga-fake.ts";
 
 // F2.5: the admin API over real HTTP and real PostgreSQL.
 const TOKENS = { TAIGA_MCP_GPT_TOKEN: "g".repeat(20), TAIGA_MCP_CLAUDE_TOKEN: "c".repeat(20), TAIGA_MCP_PO_TOKEN: "p".repeat(20) };
@@ -33,7 +34,7 @@ before(async () => {
   const instance = randomUUID();
   await pool.query("INSERT INTO taiga_instance (id, instance_key, base_url) VALUES ($1,'lab','http://t')", [instance]);
   await pool.query("INSERT INTO project_binding (id, instance_id, taiga_project_id, slug, name, lifecycle) VALUES ($1,$2,7,'lab','Lab','managed')", [project, instance]);
-  server = await startAdminServer({ host: "127.0.0.1", port: 0, allowedOrigins: [], allowedHosts: [] }, pool, loadActorConfig(TOKENS));
+  server = await startAdminServer({ host: "127.0.0.1", port: 0, allowedOrigins: [], allowedHosts: [] }, pool, loadActorConfig(TOKENS), { mirror: fakeTaiga("http://t", {}, { cards: (key) => { if (taigaNow.down) throw new Error("ETIMEDOUT"); return key === "tasks" ? taigaNow.tasks : []; } }) });
   base = `http://127.0.0.1:${(server.address() as { port: number }).port}/admin/api/v1`;
 });
 after(async () => {
@@ -47,6 +48,8 @@ interface Reply {
   status: string; schema: string; code: string; correlation_id: string; revision: number; hash: string; kind: string;
   items: Item[]; problems: { code: string }[]; policy: { schemaVersion: number };
 }
+// What the fake Taiga behind the admin API answers right now: the Tasks it lists (status 2 = In Progress), or no answer at all.
+const taigaNow = { tasks: [] as { ref: number; status: number }[], down: false };
 const call = async (method: string, path: string, body?: unknown, headers: Record<string, string> = PO) => {
   const res = await fetch(`${base}${path}`, { method, headers: { ...headers, ...(body ? { "content-type": "application/json" } : {}) }, body: body ? JSON.stringify(body) : undefined });
   return { status: res.status, headers: res.headers, json: (await res.json()) as Reply };
@@ -85,6 +88,33 @@ test("propose, review, approve, history and audit through the API", async () => 
   assert.deepEqual((await call("GET", `/projects/${project}/audit`)).json.items.map((a) => a.operation), ["approve", "propose"]);
   const sim = await call("POST", `/projects/${project}/simulate`, { entity: "task", role: "gpt", from: "to do", to: "in progress" });
   assert.deepEqual([sim.json.kind, sim.json.revision], ["typed", 1]);
+});
+
+test("approval through the API: active work is 409 with the card listed, Taiga down is 503 about Taiga, no Taiga session is 503, and the service decides", async () => {
+  const active = async () => (await call("GET", `/projects/${project}`)).json.activeRevision;
+  const revision = await active();
+  const changed = legacySeed();
+  changed.entities.task.transitions.find((t) => t.from === "to do" && t.to === "in progress")!.allow.push("claude");
+  const proposed = await call("POST", `/projects/${project}/proposals`, { policy: changed });
+  const rev = (await call("GET", `/projects/${project}/proposals`)).json.items.find((i) => (i as unknown as { hash: string }).hash === proposed.json.hash)!.revision;
+  const approve$ = () => call("POST", `/projects/${project}/proposals/${rev}/approve`, { expectedRevision: revision, hash: proposed.json.hash, reason: "x" });
+  taigaNow.tasks = [{ ref: 5, status: 2 }];
+  const busy = await approve$();
+  assert.deepEqual([busy.status, busy.json.code, busy.json.problems.map((p) => p.where)], [409, "active_work", ["task #5"]]);
+  taigaNow.tasks = [];
+  taigaNow.down = true;
+  const down = await approve$();
+  assert.deepEqual([down.status, down.json.code], [503, "taiga_unavailable"]);
+  assert.match(down.json.message, /Taiga/);
+  assert.doesNotMatch(down.json.message, /postgres|database/i);
+  taigaNow.down = false;
+  assert.equal(await active(), revision, "no refusal changed the active revision");
+  const bare = await startAdminServer({ host: "127.0.0.1", port: 0, allowedOrigins: [], allowedHosts: [] }, pool, loadActorConfig(TOKENS));
+  const res = await fetch(`http://127.0.0.1:${(bare.address() as { port: number }).port}/admin/api/v1/projects/${project}/proposals/${rev}/approve`, { method: "POST", headers: { ...PO, "content-type": "application/json" }, body: JSON.stringify({ expectedRevision: revision, hash: proposed.json.hash, reason: "x" }) });
+  assert.deepEqual([res.status, ((await res.json()) as Reply).code], [503, "taiga_unavailable"]);
+  bare.close();
+  assert.equal((await approve$()).status, 200);
+  assert.equal(await active(), revision + 1);
 });
 
 test("stale, wrong hash, invalid policy and bad bodies map to 409, 409, 422, 422", async () => {
@@ -155,7 +185,10 @@ test("the health check passes against a healthy process and fails with a wrong t
 });
 
 test("POST /reconcile is a dry run unless apply is true, and says so when there is no Taiga session", async () => {
-  assert.equal((await call("POST", "/reconcile", {})).json.code, "mirror_unavailable");
+  const bare = await startAdminServer({ host: "127.0.0.1", port: 0, allowedOrigins: [], allowedHosts: [] }, pool, loadActorConfig(TOKENS));
+  const bareUrl = `http://127.0.0.1:${(bare.address() as { port: number }).port}/admin/api/v1/reconcile`;
+  assert.equal(((await (await fetch(bareUrl, { method: "POST", headers: { ...PO, "content-type": "application/json" }, body: "{}" })).json()) as Reply).code, "mirror_unavailable");
+  bare.close();
   const statuses = ["To Do", "In Progress", "GPT Validation", "Human Decision", "Done", "Cancelled"].map((name, id) => ({ id: id + 1, name }));
   const fake = {
     getAll: async () => [{ id: 501, slug: "m", name: "Mirrored" }],
@@ -179,7 +212,7 @@ test("a merge obligation that could not be proven is listed, and only the PO clo
   const instance = (await pool.query("SELECT id FROM taiga_instance LIMIT 1")).rows[0].id;
   await pool.query("INSERT INTO project_binding (id, instance_id, taiga_project_id, slug, name, lifecycle) VALUES ($1,$2,8,'ob','Ob','managed')", [other, instance]);
   const v = await propose(pool, other, "gpt", legacySeed());
-  await approve(pool, other, "po", { policyId: v.policyId, expectedRevision: null, hash: v.hash, reason: "seed" });
+  await approve(pool, other, "po", { policyId: v.policyId, expectedRevision: null, hash: v.hash, reason: "seed" }, fakeTaiga("http://t"));
   const rt = createPolicyRuntime(pool, "http://t");
   const managed = (await rt.forProject(8))!;
   const authorizationId = randomUUID();

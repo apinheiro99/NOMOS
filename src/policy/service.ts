@@ -5,8 +5,9 @@ import type { EntityKind } from "../workflow/policy.js";
 import { uuidv7 } from "../identity.js";
 import { evaluate } from "./evaluator.js";
 import type { TaigaClient } from "../client.js";
-import { norm } from "../workflow/policy.js";
-import { ACTIVE_STATUSES } from "../workflow/start-rules.js";
+import { vocabulary } from "../workflow/policy.js";
+import { STATUS_BASE } from "../workflow/result.js";
+import { activeStatusNames } from "../workflow/start-rules.js";
 import { withProjectLock, withTransaction } from "./repository.js";
 import type { Decision, Facts, Policy } from "./types.js";
 import { validatePolicy } from "./validator.js";
@@ -21,6 +22,8 @@ export class PolicyError extends Error {
   }
 }
 
+// The PO's Taiga session and the instance it belongs to (the admin API's MirrorDeps).
+export interface TaigaAccess { client: TaigaClient; baseUrl: string }
 export interface ActivePolicy { policyId: string; revision: number; hash: string; policy: Policy }
 interface VersionRow { id: string; revision: string; parent_id: string | null; payload: Policy; content_hash: string }
 
@@ -98,43 +101,72 @@ export const rollback = (pool: pg.Pool, projectId: string, by: ActorRole, toRevi
     return created;
   }));
 
-// A policy change must not land on top of work that was decided under the old policy and is not finished: a journal entry still at `intent`
-// (its outcome unknown), a merge authorization still owed, or a continuation still pending. The evidence is listed; nothing is guessed or cleared.
+// A policy change must not land on top of work that was decided under the current policy and is not finished. Blockers, each listed with the record that holds it:
+//   journal entries still `intent` (outcome unknown), `applied` (comment written, status change not proven) or `pending_effect` (an effect still owed, e.g. a merge authorization not delivered);
+//   merge obligations `pending` or `review` (a `signed` one is held by its journal entry while that is `pending_effect`);
+//   continuations of this project's ledger not yet `handled` (pending or delivered). Nothing is guessed, cleared or acknowledged here.
+const UNFINISHED_PHASES = ["intent", "applied", "pending_effect"];
 async function requireNoPendingWork(c: pg.PoolClient, projectId: string): Promise<void> {
-  const { rows } = await c.query<{ taiga_project_id: string; journal: string; merges: string }>(
-    `SELECT b.taiga_project_id,
-            (SELECT count(*) FROM mutation_journal WHERE project_id = b.id AND phase = 'intent') AS journal,
-            (SELECT count(*) FROM merge_obligation WHERE project_id = b.id AND state IN ('pending', 'review')) AS merges
-       FROM project_binding b WHERE b.id = $1`, [projectId]);
-  const row = rows[0];
-  const continuations = (["gpt", "claude"] as const).flatMap((party) => pendingContinuations(party, Number(row.taiga_project_id))).length;
-  const pending = { journal_intents: Number(row.journal), merge_obligations: Number(row.merges), continuations };
-  if (Object.values(pending).some((n) => n > 0)) throw new PolicyError(409, "pending_work", `the project has unfinished work from the current policy: ${JSON.stringify(pending)}`);
+  const binding = (await c.query<{ taiga_project_id: string }>("SELECT taiga_project_id FROM project_binding WHERE id = $1", [projectId])).rows[0];
+  const journal = (await c.query<{ id: string; operation: string; target_key: string | null; phase: string; authorization_id: string | null; merge_state: string | null }>(
+    `SELECT j.id, j.operation, j.target_key, j.phase, m.authorization_id, m.state AS merge_state
+       FROM mutation_journal j LEFT JOIN merge_obligation m ON m.journal_id = j.id
+      WHERE j.project_id = $1 AND j.phase = ANY($2) ORDER BY j.created_at`, [projectId, UNFINISHED_PHASES])).rows;
+  const merges = (await c.query<{ authorization_id: string; entity: string; taiga_id: string; state: string; journal_id: string }>(
+    `SELECT authorization_id, entity, taiga_id, state, journal_id FROM merge_obligation WHERE project_id = $1 AND state IN ('pending', 'review') ORDER BY created_at`, [projectId])).rows;
+  let ledger: ReturnType<typeof pendingContinuations>;
+  try { ledger = (["gpt", "claude"] as const).flatMap((party) => pendingContinuations(party, Number(binding.taiga_project_id))); }
+  catch (e) { throw new PolicyError(503, "ledger_unavailable", `the continuation ledger could not be read, so pending work cannot be ruled out: ${(e as Error).message}`); }
+  const count = (phase: string) => journal.filter((j) => j.phase === phase).length;
+  const pending = { journal_intents: count("intent"), journal_applied: count("applied"), journal_pending_effect: count("pending_effect"), merge_obligations: merges.length, continuations: ledger.length };
+  if (!Object.values(pending).some((n) => n > 0)) return;
+  const problems: Violation[] = [
+    ...journal.map((j) => ({ code: `journal_${j.phase}`, where: `journal:${j.id}`, detail: `${j.operation} ${j.target_key ?? ""}`.trim() + (j.authorization_id ? ` (merge obligation ${j.authorization_id}, ${j.merge_state})` : "") })),
+    ...merges.map((m) => ({ code: `merge_${m.state}`, where: `merge_obligation:${m.authorization_id}`, detail: `${m.entity} #${m.taiga_id} (journal ${m.journal_id})` })),
+    ...ledger.map((k) => ({ code: `continuation_${k.state}`, where: `continuation:${k.id}`, detail: `${k.type} ${k.entity} #${k.ref} to ${k.to}${k.request_id ? ` (request ${k.request_id})` : ""}` })),
+  ];
+  throw new PolicyError(409, "pending_work", `the project has unfinished work from the current policy: ${JSON.stringify(pending)}`, problems);
 }
 
-// Work in flight in Taiga that a policy change would strand: a card in an active status (decided under the current policy and not finished), or one in a status the
-// new policy does not have. Read under the project lock, every page, so a card on a later page counts. Each is listed; nothing is guessed.
+// Work in flight in Taiga that a policy change would strand: a card in an active status of ITS entity, or one in a status the new policy does not have.
+// Read under the project lock, from the project's own status vocabulary (never from a name the card happens to carry, never from an is_closed filter),
+// every page, so a card on a later page or outside a Sprint counts. What cannot be classified refuses the approval: absent information is not "no work".
 const CARDS = [["task", "tasks"], ["userstory", "userstories"], ["epic", "epics"]] as const;
+const unavailable = (what: string, e?: unknown) => new PolicyError(503, "taiga_unavailable", `Taiga could not answer for ${what}${e ? `: ${(e as Error).message}` : ""}; work in flight cannot be ruled out`);
+async function listOf<T>(read: () => Promise<unknown>, what: string): Promise<T[]> {
+  let body: unknown;
+  try { body = await read(); } catch (e) { throw unavailable(what, e); }
+  if (!Array.isArray(body)) throw unavailable(`${what} (the response was not a list)`);
+  return body as T[];
+}
 async function requireNoActiveWork(c: pg.PoolClient, client: TaigaClient, projectId: string, payload: Policy): Promise<void> {
   const { rows } = await c.query<{ taiga_project_id: string }>("SELECT taiga_project_id FROM project_binding WHERE id = $1", [projectId]);
+  const project = Number(rows[0].taiga_project_id);
   const active: string[] = [];
   const unknown: string[] = [];
+  const unresolved: string[] = [];
   for (const [entity, path] of CARDS) {
     const rules = payload.entities[entity];
-    const open = (await client.getAll(`/${path}`, { project: Number(rows[0].taiga_project_id), status__is_closed: false })) as { ref: number; status_extra_info?: { name?: string } }[];
-    for (const card of open) {
-      const status = norm(card.status_extra_info?.name ?? "");
-      if (ACTIVE_STATUSES.includes(status)) active.push(`${entity} #${card.ref} (${status})`);
+    const statuses = await listOf<{ id?: number; is_closed?: boolean }>(() => client.get(`/${STATUS_BASE[entity]}`, { project }), `${entity} statuses`);
+    const names = vocabulary(entity, statuses).nameById;
+    const closed = new Set(statuses.filter((s) => s.is_closed).map((s) => s.id));
+    const cards = await listOf<{ ref: number; status?: number; status_extra_info?: { name?: string } }>(() => client.getAll(`/${path}`, { project }), `${entity} cards`);
+    for (const card of cards) {
+      const status = typeof card.status === "number" ? names.get(card.status) : undefined;
+      if (status === undefined) unresolved.push(`${entity} #${card.ref}`);
+      else if (activeStatusNames(entity).includes(status)) active.push(`${entity} #${card.ref} (${status})`);
       // Only an entity whose every status is governed has a closed vocabulary; for the others a status the policy does not list is a plain, ungoverned one.
-      else if (rules.governed === "all" && !Object.hasOwn(rules.states, status)) unknown.push(`${entity} #${card.ref}`);
+      else if (rules.governed === "all" && !closed.has(card.status) && !Object.hasOwn(rules.states, status)) unknown.push(`${entity} #${card.ref} (${status})`);
     }
   }
-  if (active.length) throw new PolicyError(409, "active_work", `${active.length} card(s) are in an active status: ${active.join(", ")}`);
-  if (unknown.length) throw new PolicyError(409, "cards_in_unknown_state", `${unknown.length} open card(s) sit in a status this policy does not have: ${unknown.join(", ")}`);
+  const blockers = (code: string, list: string[]): Violation[] => list.map((d) => ({ code, where: d.split(" (")[0], detail: d }));
+  if (active.length) throw new PolicyError(409, "active_work", `${active.length} card(s) are in an active status: ${active.join(", ")}`, blockers("active_work", active));
+  if (unresolved.length) throw new PolicyError(409, "cards_in_unknown_state", `${unresolved.length} card(s) have a status Taiga does not list for this project: ${unresolved.join(", ")}`, blockers("unresolved_status", unresolved));
+  if (unknown.length) throw new PolicyError(409, "cards_in_unknown_state", `${unknown.length} open card(s) sit in a status this policy does not have: ${unknown.join(", ")}`, blockers("unknown_status", unknown));
 }
 
 // Approves and activates in ONE transaction. The caller states the revision it saw and the exact hash it reviewed.
-export const approve = (pool: pg.Pool, projectId: string, by: ActorRole, a: { policyId: string; expectedRevision: number | null; hash: string; reason: string }, taiga?: TaigaClient) =>
+export const approve = (pool: pg.Pool, projectId: string, by: ActorRole, a: { policyId: string; expectedRevision: number | null; hash: string; reason: string }, taiga?: TaigaAccess) =>
   withProjectLock(pool, projectId, (c) => withTransaction(c, async () => {
     requirePo(by, "approve a policy");
     const { rows } = await c.query<VersionRow>("SELECT id, revision, parent_id, payload, content_hash FROM policy_version WHERE project_id = $1 AND id = $2", [projectId, a.policyId]);
@@ -149,12 +181,12 @@ export const approve = (pool: pg.Pool, projectId: string, by: ActorRole, a: { po
     if ((await c.query("SELECT 1 FROM policy_review WHERE project_id = $1 AND policy_id = $2 AND decision = 'rejected'", [projectId, a.policyId])).rowCount) {
       throw new PolicyError(409, "rejected", "this proposal was rejected: make a new proposal instead");
     }
+    // Every administrative activation, the first included, needs Taiga's word that nothing is in flight (the mirror's bootstrap is the only path without it).
+    if (!taiga) throw new PolicyError(503, "taiga_unavailable", "a policy cannot be activated without checking Taiga for work in flight");
+    const bound = (await c.query<{ base_url: string }>("SELECT i.base_url FROM project_binding b JOIN taiga_instance i ON i.id = b.instance_id WHERE b.id = $1", [projectId])).rows[0];
+    if (!bound || bound.base_url.replace(/\/+$/, "") !== taiga.baseUrl.replace(/\/+$/, "")) throw new PolicyError(409, "instance_mismatch", "the Taiga session is not the instance this project is bound to");
+    await requireNoActiveWork(c, taiga.client, projectId, version.payload);
     await requireNoPendingWork(c, projectId);
-    // Replacing a policy in force needs Taiga's word that nothing is in flight; the first activation has nothing decided before it.
-    if (current) {
-      if (!taiga) throw new PolicyError(503, "taiga_unavailable", "a policy in force cannot be replaced without checking Taiga for work in flight");
-      await requireNoActiveWork(c, taiga, projectId, version.payload);
-    }
     const reviewId = uuidv7();
     const activationId = uuidv7();
     await c.query("INSERT INTO policy_review (id, project_id, policy_id, decision, actor, reason) VALUES ($1,$2,$3,'approved',$4,$5)", [reviewId, projectId, a.policyId, by, a.reason]);

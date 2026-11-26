@@ -7,7 +7,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { migrate } from "../dist/policy/migrate.js";
 import { createPool } from "../dist/policy/repository.js";
-import { approve, propose } from "../dist/policy/service.js";
+import { bootstrapPolicy } from "../dist/policy/service.js";
 import { legacySeed } from "../dist/policy/legacy-seed.js";
 import { connect, createTestDatabase } from "./support/pg.ts";
 
@@ -27,8 +27,7 @@ test("0003 rows survive 0004: a pending one becomes review, a signed one stays s
   await c.query("INSERT INTO taiga_instance (id, instance_key, base_url) VALUES ($1,'lab','http://taiga.invalid')", [instance]);
   await c.query("INSERT INTO project_binding (id, instance_id, taiga_project_id, slug, name, lifecycle) VALUES ($1,$2,49,'lab','Lab','managed')", [binding, instance]);
   const pool = createPool(db.url);
-  const v = await propose(pool, binding, "gpt", legacySeed());
-  await approve(pool, binding, "po", { policyId: v.policyId, expectedRevision: null, hash: v.hash, reason: "seed" });
+  await bootstrapPolicy(c as never, binding, legacySeed()); // the schema is the old one here: the system bootstrap, not the (current-schema) approval, seeds the policy
   const [pending, signed] = [randomUUID(), randomUUID()];
   const row = (aid: string, state: string, envelope: string | null) => c.query(
     "INSERT INTO merge_obligation (authorization_id, project_id, entity, taiga_id, done_status, taiga_project, context, work_item, target_work_item, state, envelope) VALUES ($1,$2,'task',7,5,49,'{}','{}','Story #3',$3,$4)", [aid, binding, state, envelope]);
