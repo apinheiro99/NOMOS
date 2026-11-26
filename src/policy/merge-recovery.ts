@@ -30,7 +30,7 @@ export async function recoverMergeObligations(runtime: PolicyRuntime, client: Ta
     const card = (await client.get(`/${BASE[o.entity]}/${o.taigaId}`)) as { status?: number; ref?: number };
     if (o.envelope) { if (await deliver(runtime, o, card.ref, o.envelope, o.approvalCommentId ?? "")) result.delivered += 1; continue; }
     const history = (await client.get(`/history/${o.entity}/${o.taigaId}`)) as Entry[];
-    const approval = findComment(history, o.approvalHash);
+    const approval = findComment(history, o.approvalHash, o.createdAt);
     const done = card.status === o.doneStatus;
     const expected = done ? await expectedOf(client, o.entity, o.taigaProject, o.actor, o.doneStatus) : undefined;
     const proven = expected ? provenTransition(history, o.approvalHash, expected, o.createdAt) : undefined;
