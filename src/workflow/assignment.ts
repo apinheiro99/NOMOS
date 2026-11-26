@@ -75,6 +75,7 @@ export async function createdWithOwner<T>(client: TaigaClient, kind: "task" | "u
     // The created card is READ FRESH from Taiga (never the create response): its current version and assignee decide the write, and the reread verifies it.
     const done = await mutate(client, {
       read: () => client.get(`/${BASE[kind]}/${row.id}`) as Promise<Row>,
+      validators: [(card) => (card.status === statusId ? null : `status changed after creation (${String(statusId)} -> ${String(card.status)}); assignment was not written`)],
       write: async (card, w) => { if (card.assigned_to !== owner.id) await w.patch(kind, card.id, { assigned_to: owner.id }, card.version); },
       verify: (after) => assigneeProblem(after, owner.id),
     });
@@ -105,11 +106,18 @@ export async function backfillSprintAssignees(client: TaigaClient, sprint: numbe
         // Fresh read of the card, its owner re-checked (idempotent on a concurrent repair), then only assigned_to is written and reread.
         const done = await mutate(client, {
           read: () => client.get(`/${BASE[kind]}/${card.id}`) as Promise<Row>,
-          validators: [(fresh) => (fresh.assigned_to === owner.id ? "already correct" : null)],
+          validators: [
+            (fresh) => (fresh.status === card.status ? null : `status changed during backfill (${String(card.status)} -> ${String(fresh.status)})`),
+            (fresh) => (fresh.assigned_to === owner.id ? "already correct" : null),
+          ],
           write: (fresh, w) => w.patch(kind, card.id, { assigned_to: owner.id }, fresh.version),
           verify: (after) => assigneeProblem(after, owner.id),
         });
-        if (!done.written) { report.already_correct++; continue; }
+        if (!done.written) {
+          if (done.problem === "already correct") report.already_correct++;
+          else report.failed.push({ kind, ref: card.ref, problem: done.problem });
+          continue;
+        }
         if (done.integrity) { report.failed.push({ kind, ref: card.ref, problem: done.integrity }); continue; }
       }
       report.updated.push({ kind, ref: card.ref, status: name, assigned_to: owner.id });
