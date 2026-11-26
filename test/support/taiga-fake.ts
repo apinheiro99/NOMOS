@@ -6,11 +6,12 @@ import type { TaigaAccess } from "../../dist/policy/service.js";
 const LISTS = { tasks: "task-statuses", userstories: "userstory-statuses", epics: "epic-statuses" } as const;
 const statusesOf = (list: string) => [...PROJECT_PROFILE[list].map((s, i) => ({ id: i + 1, name: s.name, is_closed: !!s.is_closed })), { id: 99, name: "Limbo", is_closed: false }];
 
-export interface FakeHooks { statuses?: (list: string) => unknown; cards?: (path: string) => unknown; before?: () => Promise<void>; calls?: string[] }
+export interface FakeHooks { policyAt?: TaigaAccess["runtime"]["policyAt"]; statuses?: (list: string) => unknown; cards?: (path: string) => unknown; before?: () => Promise<void>; calls?: string[] }
 export function fakeTaiga(baseUrl = "http://t", cards: Record<string, [number, string][]> = {}, hooks: FakeHooks = {}): TaigaAccess {
   const idOf = (path: keyof typeof LISTS, name: string) => statusesOf(LISTS[path]).find((s) => s.name === name)?.id ?? 12345;
   return {
     baseUrl,
+    runtime: { policyAt: hooks.policyAt ?? (async () => "legacy") },
     client: {
       get: async (path: string) => { hooks.calls?.push(`GET ${path}`); await hooks.before?.(); return hooks.statuses ? hooks.statuses(path.slice(1)) : statusesOf(path.slice(1)); },
       getAll: async (path: string) => {

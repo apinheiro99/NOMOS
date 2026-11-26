@@ -44,9 +44,15 @@ export function continuationOf(type: string, to: Party, from: Party, entity: Con
   return { id: `${type}:p${project ?? "-"}:${entity}${ref}:${source}`, type, to, from, entity, ref, ...(project !== undefined ? { project } : {}), source, ...extra, created_at: new Date().toISOString() };
 }
 
+// A crash can leave a torn last line with no newline; the next line must not be glued to it (it would be skipped as unreadable too).
+function append(file: string, line: Line): void {
+  const torn = existsSync(file) && /[^\n]$/.test(readFileSync(file, "utf8"));
+  appendFileSync(file, `${torn ? "\n" : ""}${JSON.stringify(line)}\n`);
+}
+
 export function recordContinuation(c: Continuation, file = continuationFile()): { id: string; duplicate: boolean } {
   if (foldContinuations(file).has(c.id)) return { id: c.id, duplicate: true };
-  appendFileSync(file, `${JSON.stringify({ op: "emit", ...c })}\n`);
+  append(file, { op: "emit", ...c });
   return { id: c.id, duplicate: false };
 }
 
@@ -61,7 +67,7 @@ export function ackContinuation(id: string, ack: "delivered" | "handled", by: st
   if (problem) return { ok: false, reason: problem };
   const rank = { pending: 0, delivered: 1, handled: 2 };
   if (rank[c.state] >= rank[ack]) return { ok: true, state: c.state, already: true };
-  appendFileSync(file, `${JSON.stringify({ op: ack, id, by, at: new Date().toISOString() })}\n`);
+  append(file, { op: ack, id, by, at: new Date().toISOString() });
   return { ok: true, state: ack, already: false };
 }
 
